@@ -204,6 +204,9 @@
   .file-menu-add { width:100%; border:1px dashed var(--border); border-radius:6px; background:transparent;
                    color:var(--muted); padding:7px; cursor:pointer; font:inherit; font-size:.74rem; }
   .file-menu-add:hover { color:var(--accent); border-color:var(--accent); }
+  /* Same button, two ways in: click opens the picker, a file drag lights it up as a drop zone. */
+  .file-menu-add.drop-over { color:var(--accent); border-color:var(--accent); border-style:solid;
+                             background:rgba(88,166,255,.12); }
   .fnone { color:var(--muted); font-size:.78rem; }
   /* ---- inline CRM report panel ----
      "Open" expands the Report Generator in a same-origin frame directly beneath the patient's
@@ -350,7 +353,7 @@
         <button id="reconnectBtn" onclick="reconnectDatabase()" style="display:none;">Reconnect same database</button>
         <button id="openBtn" onclick="openDatabase()">Open database&hellip;</button>
         <button onclick="newDatabase()">New database&hellip;</button>
-        <input id="attachFile" type="file" accept="application/pdf,.pdf,.log,.txt" style="display:none">
+        <input id="attachFile" type="file" accept="application/pdf,.pdf,.log,.txt" multiple style="display:none">
         <div style="border-top:1px solid var(--border); margin:6px 0 2px;"></div>
         <div id="dbProtectionStatus" class="hdr-status">Password protection: &mdash;</div>
         <button id="dbProtectBtn" onclick="togglePasswordProtection()" disabled>Add password&hellip;</button>
@@ -1971,7 +1974,7 @@
         '<button type="button" class="file-menu-remove" data-rm-slot="' + esc(slot) + '" data-rm-name="' + esc(name) +
         '" title="Remove ' + esc(name) + ' from this patient" aria-label="Remove ' + esc(name) + '">&times;</button></div>';
     });
-    html += '<button type="button" class="file-menu-add" data-add="' + esc(slot) + '" role="menuitem">+ Attach programmer file</button>';
+    html += '<button type="button" class="file-menu-add" data-add="' + esc(slot) + '" role="menuitem" title="Click to choose files — or drag files here">+ Attach programmer file(s)</button>';
     menu.innerHTML = html; menu.dataset.slot = slot; menu.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     var r = trigger.getBoundingClientRect(), mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -2826,17 +2829,128 @@
 
   /* ---------- manually attach a programmer PDF to a patient (no auto-fill) ---------- */
   var pendingAddSlot = null;
-  $("attachFile").addEventListener("change", function (ev) {
-    var f = ev.target.files && ev.target.files[0];
-    var slot = pendingAddSlot; pendingAddSlot = null; ev.target.value = "";
-    if (!f || !slot || !wsRoot) return;
-    var name = f.name;
-    if (/^report\.(pdf|json|txt)$/i.test(name)) name = "prog-" + name;   // never clobber a generated report file
+  // Shared by both ways in — the picker (click) and a drag straight onto the attach button.
+  function attachFilesToSlot(slot, files) {
+    if (!files.length || !slot || !wsRoot) return;
+    var done = [], failed = [];
     WS.slotDir(wsRoot, curDate, slot, true)
-      .then(function (dir) { return WS.writeFile(dir, name, f); })
+      .then(function (dir) {
+        // One at a time: writeFile mutates the shared bundle, and a per-file catch keeps one bad
+        // file from throwing away the ones that did land.
+        return files.reduce(function (chain, f) {
+          return chain.then(function () {
+            var name = f.name;
+            if (/^report\.(pdf|json|txt)$/i.test(name)) name = "prog-" + name;   // never clobber a generated report file
+            return WS.writeFile(dir, name, f)
+              .then(function () { done.push(name); },
+                    function (e) { failed.push(f.name + " (" + e.message + ")"); });
+          });
+        }, Promise.resolve());
+      })
       .then(function () { return WS.flush ? WS.flush() : null; })
-      .then(function () { setWsStatus("Attached " + name + " to " + slot, "ok"); scanSlots(); })
-      .catch(function (e) { setWsStatus("Could not attach " + f.name + ": " + e.message, "warn"); });
+      .then(function () {
+        if (!done.length) { setWsStatus("Could not attach " + failed.join(", "), "warn"); scanSlots(); return; }
+        var what = done.length === 1 ? done[0] : done.length + " files (" + done.join(", ") + ")";
+        setWsStatus("Attached " + what + " to " + slot + (failed.length ? " — could not attach " + failed.join(", ") : ""),
+                    failed.length ? "warn" : "ok");
+        scanSlots();
+      })
+      .catch(function (e) { setWsStatus("Could not attach files: " + e.message, "warn"); });
+  }
+
+  $("attachFile").addEventListener("change", function (ev) {
+    // The picker is multiple: one patient's programmer export is often several files in a folder.
+    var files = ev.target.files ? Array.prototype.slice.call(ev.target.files) : [];
+    var slot = pendingAddSlot; pendingAddSlot = null; ev.target.value = "";
+    attachFilesToSlot(slot, files);
+  });
+
+  /* ---------- the same attach button, as a drop target ---------- */
+  // Click still opens the picker; this only adds the other half, so files can come straight from
+  // an Explorer/Finder window without a round trip through the file dialog.
+  var DROP_CONFIRM_AT = 12;
+
+  function dragHasFiles(dt) {
+    if (!dt || !dt.types) return false;
+    for (var i = 0; i < dt.types.length; i++) if (dt.types[i] === "Files") return true;
+    return false;
+  }
+  // A dropped folder arrives as ONE entry, not as its contents — walk it so dragging the folder
+  // does what dragging everything inside it does. Flattened: a patient's slot has no subfolders.
+  function filesFromEntry(entry) {
+    if (!entry) return Promise.resolve([]);
+    if (entry.isFile) {
+      return new Promise(function (res) { entry.file(function (f) { res([f]); }, function () { res([]); }); });
+    }
+    if (!entry.isDirectory) return Promise.resolve([]);
+    var reader = entry.createReader(), all = [];
+    return new Promise(function (res) {
+      // readEntries returns a batch at a time (~100) and an empty batch means done.
+      (function readMore() {
+        reader.readEntries(function (batch) {
+          if (!batch.length) { res(all); return; }
+          all = all.concat(Array.prototype.slice.call(batch));
+          readMore();
+        }, function () { res(all); });
+      })();
+    }).then(function (entries) { return collectEntries(entries); });
+  }
+  function collectEntries(entries) {
+    return entries.reduce(function (chain, e) {
+      return chain.then(function (acc) { return filesFromEntry(e).then(function (fs) { return acc.concat(fs); }); });
+    }, Promise.resolve([]));
+  }
+  // MUST run synchronously inside the drop handler: the items list is emptied as soon as it returns.
+  function filesFromDrop(dt) {
+    var items = dt.items ? Array.prototype.slice.call(dt.items) : [];
+    var entries = items.map(function (it) {
+      return (it.kind === "file" && it.webkitGetAsEntry) ? it.webkitGetAsEntry() : null;
+    }).filter(Boolean);
+    var plain = dt.files ? Array.prototype.slice.call(dt.files) : [];
+    if (!entries.length) return Promise.resolve(plain);
+    return collectEntries(entries);
+  }
+
+  function setAddDropState(on) {
+    var btn = $("fileMenu").querySelector(".file-menu-add");
+    if (btn) btn.classList.toggle("drop-over", !!on);
+  }
+  ["dragenter", "dragover"].forEach(function (type) {
+    $("fileMenu").addEventListener(type, function (ev) {
+      if (!wsRoot || !dragHasFiles(ev.dataTransfer)) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "copy";
+      setAddDropState(true);
+    });
+  });
+  $("fileMenu").addEventListener("dragleave", function (ev) {
+    // Crossing between the menu's own rows fires dragleave on the way out of each one; only the
+    // pointer leaving the menu entirely should drop the highlight.
+    if (ev.relatedTarget && $("fileMenu").contains(ev.relatedTarget)) return;
+    setAddDropState(false);
+  });
+  $("fileMenu").addEventListener("drop", function (ev) {
+    if (!dragHasFiles(ev.dataTransfer)) return;
+    ev.preventDefault();
+    setAddDropState(false);
+    var slot = $("fileMenu").dataset.slot;
+    if (!slot || !wsRoot) return;
+    filesFromDrop(ev.dataTransfer).then(function (files) {
+      // Finder/Explorer sidecars (.DS_Store, thumbs) ride along in a folder drop and are noise.
+      files = files.filter(function (f) { return f && f.name && f.name.charAt(0) !== "."; });
+      if (!files.length) { setWsStatus("Nothing was attached — that drop had no files in it", "warn"); return; }
+      // Everything dropped goes INTO the database, so a folder dragged in by mistake is a size
+      // problem, not just a tidiness one. Confirm anything that looks like more than a visit.
+      if (files.length > DROP_CONFIRM_AT &&
+          !confirm("Attach " + files.length + " files to " + slot + "?\n\nThey are all copied into the database.")) return;
+      closeFileMenu();
+      attachFilesToSlot(slot, files);
+    });
+  });
+  // A file dropped anywhere ELSE would make the browser navigate to it — which throws away the
+  // open schedule. Swallow stray file drops; provider drags carry text, so they still work.
+  ["dragover", "drop"].forEach(function (type) {
+    window.addEventListener(type, function (ev) { if (dragHasFiles(ev.dataTransfer)) ev.preventDefault(); });
   });
 
   // On load, reopen the working database from the store (IndexedDB copy carries across
