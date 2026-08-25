@@ -1134,7 +1134,8 @@
     var M = 40, CW = W - 2 * M;
     var NAVY = [30, 58, 95], RULE = [200, 216, 232], MUTED = [110, 120, 132],
         ALERT = [176, 42, 42], BAND = [230, 238, 246], ZEBRA = [247, 250, 252], INK = [17, 17, 17],
-        NOTE_INK = [84, 94, 107],       // the caption's grey, a step darker so a paragraph still prints
+        FIELD_INK = [60, 66, 74],       // line one's secondary fields AND the notes: one slate, dark
+                                        // enough to survive a low-toner laser print
         HAIRLINE = [214, 225, 237];     // the divider WITHIN a block — thinner, not just paler, than the one between blocks
     // Line one: seven fixed columns. They start at the block's text inset (M + TEXT_X), so their
     // widths sum to the content width MINUS that inset — otherwise the last column ("NOT CONN" is
@@ -1267,7 +1268,7 @@
             doc.setFontSize(ROW_PT);
             if (c.k === "rm" && e.rmIssue) doc.setTextColor(ALERT[0], ALERT[1], ALERT[2]);
             else if (c.k === "time" || c.k === "pt") doc.setTextColor(INK[0], INK[1], INK[2]);
-            else doc.setTextColor(60, 66, 74);
+            else doc.setTextColor(FIELD_INK[0], FIELD_INK[1], FIELD_INK[2]);
             doc.text(fit(v, c.w - 6), x, base);
             x += c.w;
           });
@@ -1290,7 +1291,7 @@
           doc.setFont("helvetica", "normal"); doc.setFontSize(NOTE_PT);
           doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
           doc.text("Notes", M + TEXT_X, y + NOTE_TOP);
-          doc.setTextColor(NOTE_INK[0], NOTE_INK[1], NOTE_INK[2]);
+          doc.setTextColor(FIELD_INK[0], FIELD_INK[1], FIELD_INK[2]);
           lines.forEach(function (ln, i) { doc.text(ln, NOTE_X, y + NOTE_TOP + i * NOTE_H); });
           doc.setTextColor(INK[0], INK[1], INK[2]);
           y += lines.length * NOTE_H;

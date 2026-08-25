@@ -68,7 +68,7 @@
     function field(code, name) { return MAP[code] ? MAP[code].v : ''; }
     function unit(code) { return MAP[code] ? MAP[code].u : ''; }
     // first non-empty value among candidate codes — Abbott uses different codes for, e.g., an
-    // SJM RV pace/sense lead (2461) vs a defib RV lead (2449) vs an "Other" lead (2450).
+    // SJM RV pace/sense lead (2461) vs its "Other" model (2462) vs a defib RV lead (2449/2450).
     function first() { for (var i = 0; i < arguments.length; i++) { var r = MAP[arguments[i]]; if (r && r.v) return r.v; } return ''; }
 
     var RESULT = {}, LEADS = [], EPISODES = [], GOTCHAS = [], ROUTE = {};
@@ -157,15 +157,16 @@
 
     /* ---------- lead inventory (verbatim) ----------
        Abbott uses different codes depending on lead type. RV especially: a pace/sense lead
-       (PPM / CRT-P) uses 2460/2461/2470/2463, while a defib lead (ICD / CRT-D) uses
-       2448/2449or2450/2469/2451. Model can also be "SJM …" vs "Other …". Resolve each cell from
+       (PPM / CRT-P) uses 2460/2461or2462/2470/2463, while a defib lead (ICD / CRT-D) uses
+       2448/2449or2450/2469/2451. Model can also be "SJM …" (2461) vs "Other …" (2462), and a
+       non-SJM lead only ever fills the "Other" code. Resolve each cell from
        its candidate codes. */
     function pushLead(loc, mfr, model, serial, date) {
       if (!model && !serial) return;
       LEADS.push({ location: loc, manufacturer: mfr, model: model, serial: serial, date: aDate(date) });
     }
     pushLead('Atrial', field(2456), first(2457, 2458), field(2468), field(2459));
-    pushLead('RV',     first(2460, 2448), first(2461, 2449, 2450), first(2470, 2469), first(2463, 2451));
+    pushLead('RV',     first(2460, 2448), first(2461, 2462, 2449, 2450), first(2470, 2469), first(2463, 2451));
     pushLead('LV',     field(2464), first(2465, 2466), field(2471), field(2467));
 
     /* ---------- stored-episode summary ----------

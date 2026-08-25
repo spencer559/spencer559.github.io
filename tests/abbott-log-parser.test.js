@@ -59,4 +59,25 @@ const mismatchedClearDates = ABBOTT.runLog(log([
 assert.ok(!mismatchedClearDates.RESULT["ep-since-date"],
   "one shared Since date must stay blank when atrial and tachy intervals disagree");
 
+/* A non-SJM lead fills only the "Other" model code — 2462 for RV (2458 for atrial), never the
+   SJM code 2461. Reading RV model from 2461/2449/2450 alone blanked the RV lead row. */
+const otherLeads = ABBOTT.runLog(log([
+  [200, "Device Model Name", "Assurity MRI"],
+  [301, "Mode", "DDD"],
+  [2456, "Manufacturer: Atrial Lead", "St. Jude Medical"],
+  [2458, "Model Number: Other Atrial Lead", "LPA1231"],
+  [2468, "Atrial Lead Serial Number", "XXX000000"],
+  [2459, "Implant Date: Atrial Lead", "08/13/2026 00:00:00"],
+  [2460, "Manufacturer: RV Lead", "St. Jude Medical"],
+  [2462, "Model Number: Other RV Lead", "LPA1231"],
+  [2470, "RV Lead Serial Number", "XXX000000"],
+  [2463, "Implant Date: RV Lead", "08/13/2026 00:00:00"]
+]));
+const rvLead = otherLeads.LEADS.filter((l) => l.location === "RV")[0];
+assert.ok(rvLead, "an RV lead carrying only an Other model number must still produce a row");
+assert.strictEqual(rvLead.model, "LPA1231", "RV model must fall back to the Other code 2462");
+assert.strictEqual(rvLead.manufacturer, "St. Jude Medical");
+assert.strictEqual(rvLead.serial, "XXX000000");
+assert.strictEqual(rvLead.date, "08/13/2026");
+
 console.log("Abbott log pacing and aggregate episode checks passed");
