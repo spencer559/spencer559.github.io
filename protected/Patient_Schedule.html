@@ -1133,27 +1133,37 @@
     var W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
     var M = 40, CW = W - 2 * M;
     var NAVY = [30, 58, 95], RULE = [200, 216, 232], MUTED = [110, 120, 132],
-        ALERT = [176, 42, 42], BAND = [230, 238, 246], ZEBRA = [247, 250, 252], INK = [17, 17, 17];
+        ALERT = [176, 42, 42], BAND = [230, 238, 246], ZEBRA = [247, 250, 252], INK = [17, 17, 17],
+        NOTE_INK = [84, 94, 107],       // the caption's grey, a step darker so a paragraph still prints
+        HAIRLINE = [214, 225, 237];     // the divider WITHIN a block — thinner, not just paler, than the one between blocks
     // Line one: seven fixed columns. They start at the block's text inset (M + TEXT_X), so their
     // widths sum to the content width MINUS that inset — otherwise the last column ("NOT CONN" is
     // the widest thing that lands in it) prints past the right margin.
     var TEXT_X = 8;
+    // Widths are measured against the widest value each column can actually hold at ROW_PT
+    // ("10:30 AM", "BSci Leadless", "12/30/26", a bold "NOT CONN") plus the 6pt gutter fit()
+    // reserves — and, for Last Office, against its own header, which is wider than any date it
+    // sits above. Everything left over goes to Patient, the one column with no fixed maximum.
     var COLS = [
-      { k: "time",     h: "Time",        w: 54 },
-      { k: "pt",       h: "Patient",     w: 142 },
-      { k: "dev",      h: "Device",      w: 88 },
+      { k: "time",     h: "Time",        w: 50 },
+      { k: "pt",       h: "Patient",     w: 160 },
+      { k: "dev",      h: "Device",      w: 70 },
       { k: "provider", h: "Provider",    w: 84 },
-      { k: "check",    h: "Check",       w: 50 },
+      { k: "check",    h: "Check",       w: 42 },
       { k: "lastOff",  h: "Last Office", w: 52 },
-      { k: "rm",       h: "Remote",      w: 54 }
+      { k: "rm",       h: "Remote",      w: 66 }
     ];
     // Line two hangs on the SAME grid as line one: its caption sits in the Time column and the
     // notes themselves start under Patient. Caption and notes are one face at one size — only
     // colour separates them — so the block reads as two rows of a table rather than as a heading
     // with a paragraph stapled underneath.
     var NOTE_X = M + TEXT_X + COLS[0].w, NOTE_W = W - M - NOTE_X;
-    var NOTE_PT = 9, NOTE_TOP = 7;              // notes type size; first note baseline below line one
-    var ROW_H = 20, NOTE_H = 12, PAD = 6, ACCENT_X = M + 1.5;
+    // One size for every field on line one — Time and Patient lead on weight and ink, not on
+    // point size, so the row reads as a single line rather than as five different typefaces.
+    var ROW_PT = 9.5;
+    var NOTE_PT = 9, NOTE_TOP = 9;              // notes type size; first note baseline below line one
+    var ROW_H = 21, NOTE_H = 12, PAD = 6, ACCENT_X = M + 1.5;
+    var DIV_Y = 18.5;                           // hairline between line one and its notes
     var HEAD_FIRST = 34, HEAD_CONT = 20, BAND_H = 19;   // title block / continuation line / column band
 
     var entries = scheduleEntries();
@@ -1254,7 +1264,7 @@
             var v = e[c.k];
             var bold = c.k === "time" || c.k === "pt" || (c.k === "rm" && e.rmIssue);
             doc.setFont("helvetica", bold ? "bold" : "normal");
-            doc.setFontSize(c.k === "pt" ? 10 : 9);
+            doc.setFontSize(ROW_PT);
             if (c.k === "rm" && e.rmIssue) doc.setTextColor(ALERT[0], ALERT[1], ALERT[2]);
             else if (c.k === "time" || c.k === "pt") doc.setTextColor(INK[0], INK[1], INK[2]);
             else doc.setTextColor(60, 66, 74);
@@ -1271,15 +1281,25 @@
           y += 15;
         }
         if (lines.length) {
+          // A hairline across the block puts real air between the appointment's fields and its
+          // notes without walling them off from each other.
+          if (!b.cont) {
+            doc.setDrawColor(HAIRLINE[0], HAIRLINE[1], HAIRLINE[2]);
+            doc.line(M + TEXT_X, b.y + DIV_Y, W - M, b.y + DIV_Y);
+          }
           doc.setFont("helvetica", "normal"); doc.setFontSize(NOTE_PT);
           doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
           doc.text("Notes", M + TEXT_X, y + NOTE_TOP);
-          doc.setTextColor(INK[0], INK[1], INK[2]);
+          doc.setTextColor(NOTE_INK[0], NOTE_INK[1], NOTE_INK[2]);
           lines.forEach(function (ln, i) { doc.text(ln, NOTE_X, y + NOTE_TOP + i * NOTE_H); });
+          doc.setTextColor(INK[0], INK[1], INK[2]);
           y += lines.length * NOTE_H;
         }
-        doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+        // The line BETWEEN appointments is drawn heavier than the hairline inside one, so the eye
+        // never has to ask which of the two rules ends the block.
+        doc.setDrawColor(RULE[0], RULE[1], RULE[2]); doc.setLineWidth(0.9);
         doc.line(M, b.y - 2 + b.height - 2, W - M, b.y - 2 + b.height - 2);
+        doc.setLineWidth(0.5);
       });
     });
 
