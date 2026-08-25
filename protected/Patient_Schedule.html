@@ -998,43 +998,353 @@
     if (this.value) { curDate = this.value; render(); }
   });
 
-  /* ---------- print ---------- */
+  /* ---------- printed schedule -------------------------------------------------------------
+     "Print schedule" builds a real, selectable vector PDF (vendored jsPDF, the same builder the
+     Report Generator uses for report.pdf) and hands it to the in-app viewer, whose Print and
+     Download buttons then cover both a paper copy and a saved one. #printView and the @media
+     print rules stay behind it as the fallback: Ctrl/Cmd-P still produces the browser printout,
+     and so does a session where the builder cannot load or the viewer tab is blocked.
+
+     The PDF is deliberately NOT the wide table the browser prints. Each appointment is a
+     two-line block — the seven fixed fields on line one, the notes given the full page width on
+     line two — because notes are the field that actually runs long, and a notes column narrow
+     enough to sit beside the other seven turns them into unreadable slivers. */
+  var SCHED_MFR = { "Medtronic": "MDT", "Boston Sci": "BSci", "Abbott": "ABT", "Biotronik": "BIO", "MicroPort": "MPT" };
+  var SCHED_CHK = { "In-clinic": "Clinic", "Remote": "Remote", "Pre-op": "Pre-op", "Other": "Other" };
+  var SCHED_RM  = { "Connected": "Conn.", "Not connected": "NOT CONN", "External clinic": "Ext. clinic", "N/A": "N/A" };
+
+  // One printable appointment: the seven line-one fields, already abbreviated and formatted, plus
+  // the notes that get line two to themselves. `checkRaw` stays for the summary's tally.
+  function scheduleEntry(r) {
+    return {
+      time: fmtTime(r.time),
+      pt: r.pt || "",
+      dev: [SCHED_MFR[r.mfr] || r.mfr, r.dtype].filter(Boolean).join(" "),
+      provider: r.provider || "Tech",
+      check: SCHED_CHK[r.check] || r.check || "",
+      checkRaw: r.check || "",
+      lastOff: fmtDate(r.lastOff),
+      rm: SCHED_RM[r.rm] || r.rm || "",
+      rmIssue: RM_ISSUES.indexOf(r.rm) !== -1,
+      notes: String(r.notes == null ? "" : r.notes).replace(/\s+$/, "")
+    };
+  }
+  // Whatever the provider filter is showing, earliest appointment first.
+  function scheduleEntries() {
+    return visibleRows().map(function (x) { return x.r; })
+      .sort(function (a, b) { return timeVal(a.time) - timeVal(b.time); })
+      .map(scheduleEntry);
+  }
+  // The one-line standfirst under the title: how many, for whom, split by check type, and how
+  // many remote-monitoring problems the day is carrying.
+  function scheduleSummary(entries, provider) {
+    var by = {};
+    entries.forEach(function (e) { by[e.checkRaw] = (by[e.checkRaw] || 0) + 1; });
+    var issues = entries.filter(function (e) { return e.rmIssue; }).length;
+    return entries.length + " appointment" + (entries.length === 1 ? "" : "s") +
+      (provider ? " — Provider: " + provider : "") +
+      (entries.length ? " — " + CHECKS.filter(function (c) { return by[c]; })
+        .map(function (c) { return by[c] + " " + c.toLowerCase(); }).join(", ") : "") +
+      (issues ? " — " + issues + " remote-monitoring issue" + (issues === 1 ? "" : "s") + " to address" : "");
+  }
+  // What the viewer's Download button offers to save it as.
+  function scheduleFilename(date, provider) {
+    var who = String(provider || "");
+    if (who.normalize) who = who.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+    who = who.replace(/[^A-Za-z0-9-]+/g, "_").replace(/^_+|_+$/g, "");
+    return "Schedule_" + date + (who ? "_" + who : "") + ".pdf";
+  }
+
+  /* Where every appointment block lands. Pure on purpose — it takes only the measured note-line
+     count per appointment and the page geometry, never jsPDF — because pagination is the part
+     with rules worth testing: a block never splits when it would fit whole on the next page, a
+     block too tall for any page splits its notes instead of overflowing, and a line-one header
+     is never stranded at the foot of a page with fewer than `minSplit` of its notes.
+     Returns one array per page of { index, cont, noteFrom, noteTo, y, height }. */
+  function planSchedulePages(blocks, geom) {
+    var pages = [], cur = null, y = 0;
+    // Page one carries the title block, later pages a one-line continuation header, so they do
+    // not start at the same height.
+    function newPage() { cur = []; pages.push(cur); y = pages.length === 1 ? geom.top : geom.contTop; }
+    newPage();
+    for (var i = 0; i < blocks.length; i++) {
+      var lines = Math.max(0, blocks[i].noteLines | 0);
+      var placed = 0, first = true;
+      for (;;) {
+        var fresh = cur.length === 0;                       // nothing drawn on this page yet
+        var headH = first ? geom.rowH : geom.contH;         // a continuation repeats only a caption
+        var avail = geom.bottom - y;
+        var need = headH + (lines - placed) * geom.noteH + geom.pad;
+        if (need <= avail) {
+          cur.push({ index: i, cont: !first, noteFrom: placed, noteTo: lines, y: y, height: need });
+          y += need;
+          break;
+        }
+        var room = Math.floor((avail - headH - geom.pad) / geom.noteH);
+        if (room >= geom.minSplit || (fresh && room >= 1)) {
+          cur.push({ index: i, cont: !first, noteFrom: placed, noteTo: placed + room, y: y, height: headH + room * geom.noteH + geom.pad });
+          placed += room; first = false;
+          newPage();
+          continue;
+        }
+        if (fresh) {   // not even one note line fits an empty page: geometry is off, draw it anyway
+          cur.push({ index: i, cont: !first, noteFrom: placed, noteTo: lines, y: y, height: need });
+          y += need;
+          break;
+        }
+        newPage();     // this block starts the next page instead of being split raggedly
+      }
+    }
+    return pages;
+  }
+
+  // jsPDF is injected rather than fetched: connect-src is 'none' by design, script-src is 'self'.
+  var loadScriptOnce = (function () {
+    var cache = {};
+    return function (src) {
+      if (cache[src]) return cache[src];
+      cache[src] = new Promise(function (res, rej) {
+        var s = document.createElement("script");
+        s.src = src;
+        s.onload = function () { res(); };
+        s.onerror = function () { cache[src] = null; rej(new Error("Could not load " + src)); };
+        document.head.appendChild(s);
+      });
+      return cache[src];
+    };
+  })();
+  function ensureSchedulePdfBuilder() { return loadScriptOnce("../vendor/jspdf.umd.min.js"); }
+  // Warm it once the page is idle. The viewer tab has to be opened from the click itself (the
+  // pop-up blocker checks user activation), so by the time the bytes are wanted the 300 KB of
+  // script should already be parsed rather than starting to download.
+  (function () {
+    function soon() { (window.requestIdleCallback || function (f) { setTimeout(f, 1); })(function () {
+      ensureSchedulePdfBuilder().catch(function () { /* printSchedule() reports it if it matters */ });
+    }, { timeout: 3000 }); }
+    if (document.readyState === "complete") soon(); else window.addEventListener("load", soon);
+  })();
+
+  // Build the schedule as a vector PDF. Synchronous, like buildReportPdfBlob, so it can run
+  // straight out of a click handler. Returns a Blob, or null when jsPDF is not present.
+  function buildSchedulePdfBlob() {
+    var JS = (window.jspdf || {}).jsPDF;
+    if (!JS) return null;
+    var doc = new JS({ unit: "pt", format: "letter" });
+    var W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+    var M = 40, CW = W - 2 * M;
+    var NAVY = [30, 58, 95], RULE = [200, 216, 232], MUTED = [110, 120, 132],
+        ALERT = [176, 42, 42], BAND = [230, 238, 246], ZEBRA = [247, 250, 252], INK = [17, 17, 17];
+    // Line one: seven fixed columns. They start at the block's text inset (M + TEXT_X), so their
+    // widths sum to the content width MINUS that inset — otherwise the last column ("NOT CONN" is
+    // the widest thing that lands in it) prints past the right margin.
+    var TEXT_X = 8;
+    var COLS = [
+      { k: "time",     h: "Time",        w: 54 },
+      { k: "pt",       h: "Patient",     w: 142 },
+      { k: "dev",      h: "Device",      w: 88 },
+      { k: "provider", h: "Provider",    w: 84 },
+      { k: "check",    h: "Check",       w: 50 },
+      { k: "lastOff",  h: "Last Office", w: 52 },
+      { k: "rm",       h: "Remote",      w: 54 }
+    ];
+    var NOTE_LABEL_W = 46;                      // gutter holding the small NOTES caption
+    var NOTE_X = M + TEXT_X + NOTE_LABEL_W, NOTE_W = W - M - NOTE_X;
+    var ROW_H = 20, NOTE_H = 12, PAD = 7, ACCENT_X = M + 1.5;
+    var HEAD_FIRST = 34, HEAD_CONT = 20, BAND_H = 19;   // title block / continuation line / column band
+
+    var entries = scheduleEntries();
+    var meta = scheduleSummary(entries, providerFilter);
+    var d = curDate.split("-");
+    var dayDate = new Date(+d[0], +d[1] - 1, +d[2]);
+    var dayLong = dayDate.toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+    function fit(text, w) {
+      text = String(text == null ? "" : text);
+      if (!text || doc.getTextWidth(text) <= w) return text;
+      var t = text;
+      while (t.length > 1 && doc.getTextWidth(t + "...") > w) t = t.slice(0, -1);
+      return t + "...";
+    }
+    // Notes are the author's own paragraphs; keep their line breaks and wrap what is left.
+    function noteLines(text) {
+      if (!text) return [];
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+      var out = [];
+      String(text).split(/\r?\n/).forEach(function (para) {
+        if (!para.trim()) { out.push(""); return; }
+        doc.splitTextToSize(para, NOTE_W).forEach(function (ln) { out.push(ln); });
+      });
+      while (out.length && out[out.length - 1] === "") out.pop();
+      return out;
+    }
+    var wrapped = entries.map(function (e) { return noteLines(e.notes); });
+
+    function columnHeader(y) {
+      doc.setFillColor(BAND[0], BAND[1], BAND[2]);
+      doc.rect(M, y, CW, 13, "F");
+      doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+      var x = M + TEXT_X;
+      COLS.forEach(function (c) { doc.text(c.h.toUpperCase(), x, y + 9); x += c.w; });
+      doc.setDrawColor(RULE[0], RULE[1], RULE[2]); doc.line(M, y + 13, W - M, y + 13);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
+      return y + BAND_H;
+    }
+    function pageHeader(pageIndex) {
+      var y = M;
+      if (pageIndex === 0) {
+        doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+        doc.text("Device Clinic — Patient Schedule", M, y + 10);
+        doc.setFontSize(10.5); doc.setTextColor(INK[0], INK[1], INK[2]);
+        doc.text(dayLong, W - M, y + 10, { align: "right" });
+        doc.setDrawColor(NAVY[0], NAVY[1], NAVY[2]); doc.setLineWidth(1.2);
+        doc.line(M, y + 16, W - M, y + 16); doc.setLineWidth(0.5);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+        doc.text(meta, M, y + 27);
+        doc.setTextColor(INK[0], INK[1], INK[2]);
+        y += HEAD_FIRST;
+      } else {
+        doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+        doc.text("Patient Schedule — " + dayLong, M, y + 8);
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+        doc.text("continued", W - M, y + 8, { align: "right" });
+        doc.setDrawColor(RULE[0], RULE[1], RULE[2]); doc.line(M, y + 12, W - M, y + 12);
+        doc.setTextColor(INK[0], INK[1], INK[2]);
+        y += HEAD_CONT;
+      }
+      return columnHeader(y);
+    }
+
+    // Header heights are constants rather than whatever pageHeader() happened to return, because
+    // the plan has to know where each KIND of page starts before a single one is drawn.
+    var geom = { top: M + HEAD_FIRST + BAND_H, contTop: M + HEAD_CONT + BAND_H, bottom: H - M - 18,
+                 rowH: ROW_H, contH: 13, noteH: NOTE_H, pad: PAD, minSplit: 2 };
+    pageHeader(0);
+    var pages = planSchedulePages(wrapped.map(function (ln) { return { noteLines: ln.length }; }), geom);
+
+    if (!entries.length) {
+      doc.setFont("helvetica", "italic"); doc.setFontSize(10); doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.text("No appointments are scheduled for this day.", M, geom.top + 14);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
+    }
+
+    pages.forEach(function (blocks, pageIndex) {
+      if (pageIndex > 0) { doc.addPage(); pageHeader(pageIndex); }
+      blocks.forEach(function (b) {
+        var e = entries[b.index], lines = wrapped[b.index].slice(b.noteFrom, b.noteTo);
+        if (b.index % 2 === 1) {
+          doc.setFillColor(ZEBRA[0], ZEBRA[1], ZEBRA[2]);
+          doc.rect(M, b.y - 2, CW, b.height, "F");
+        }
+        // A left rule ties the two lines together as one appointment; it turns red when the
+        // patient's remote monitoring needs attention, which is the thing worth spotting from
+        // across the room on a printed day sheet.
+        var accent = e.rmIssue ? ALERT : NAVY;
+        doc.setDrawColor(accent[0], accent[1], accent[2]); doc.setLineWidth(2);
+        doc.line(ACCENT_X, b.y - 2, ACCENT_X, b.y - 2 + b.height - 2);
+        doc.setLineWidth(0.5);
+
+        var y = b.y;
+        if (!b.cont) {
+          var x = M + TEXT_X, base = y + 13;
+          COLS.forEach(function (c) {
+            var v = e[c.k];
+            var bold = c.k === "time" || c.k === "pt" || (c.k === "rm" && e.rmIssue);
+            doc.setFont("helvetica", bold ? "bold" : "normal");
+            doc.setFontSize(c.k === "pt" ? 10 : 9);
+            if (c.k === "rm" && e.rmIssue) doc.setTextColor(ALERT[0], ALERT[1], ALERT[2]);
+            else if (c.k === "time" || c.k === "pt") doc.setTextColor(INK[0], INK[1], INK[2]);
+            else doc.setTextColor(60, 66, 74);
+            doc.text(fit(v, c.w - 6), x, base);
+            x += c.w;
+          });
+          doc.setTextColor(INK[0], INK[1], INK[2]);
+          y += ROW_H;
+        } else {
+          doc.setFont("helvetica", "italic"); doc.setFontSize(7);
+          doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+          doc.text(fit(e.pt + " — notes continued", CW - 2 * TEXT_X), M + TEXT_X, y + 9);
+          doc.setTextColor(INK[0], INK[1], INK[2]);
+          y += 13;
+        }
+        if (lines.length) {
+          doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
+          doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+          doc.text("NOTES", M + TEXT_X, y + 9);
+          doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+          doc.setTextColor(INK[0], INK[1], INK[2]);
+          lines.forEach(function (ln, i) { doc.text(ln, NOTE_X, y + 9 + i * NOTE_H); });
+          y += lines.length * NOTE_H;
+        }
+        doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
+        doc.line(M, b.y - 2 + b.height - 2, W - M, b.y - 2 + b.height - 2);
+      });
+    });
+
+    var total = doc.internal.getNumberOfPages();
+    for (var p = 1; p <= total; p++) {
+      doc.setPage(p);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(7);
+      doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+      doc.text("Confidential — contains patient information · Generated " + new Date().toLocaleString(), M, H - M + 8);
+      doc.text("Page " + p + " of " + total, W - M, H - M + 8, { align: "right" });
+    }
+
+    // Same guard the report builder uses: a truncated PDF reaches the viewer as a vague
+    // "Invalid PDF structure", so the bytes are checked before anything is handed over.
+    var out = doc.output("arraybuffer");
+    var bytes = new Uint8Array(out || new ArrayBuffer(0));
+    var headerOk = bytes.length >= 8 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 && bytes[4] === 0x2d;
+    var tail = "";
+    for (var bi = Math.max(0, bytes.length - 32); bi < bytes.length; bi++) tail += String.fromCharCode(bytes[bi]);
+    if (!headerOk || tail.indexOf("%%EOF") < 0) throw new Error("the PDF generator produced incomplete output");
+    return new Blob([out], { type: "application/pdf" });
+  }
+
+  // The browser printout, kept for Ctrl/Cmd-P and as the fallback path.
   function buildPrintView() {
     var d = curDate.split("-");
     var dt = new Date(+d[0], +d[1] - 1, +d[2]);
-    var rs = visibleRows().map(function (x) { return x.r; }).sort(function (a, b) { return timeVal(a.time) - timeVal(b.time); });
-    var abMfr = { "Medtronic": "MDT", "Boston Sci": "BSci", "Abbott": "ABT", "Biotronik": "BIO", "MicroPort": "MPT" };
-    var abChk = { "In-clinic": "Clinic", "Remote": "Remote", "Pre-op": "Pre-op", "Other": "Other" };
-    var abRm  = { "Connected": "Conn.", "Not connected": "NOT CONN", "External clinic": "Ext. clinic", "N/A": "N/A" };
-    var by = {};
-    rs.forEach(function (r) { by[r.check] = (by[r.check] || 0) + 1; });
-    var rmIssues = rs.filter(function (r) { return RM_ISSUES.indexOf(r.rm) !== -1; }).length;
-    var meta = rs.length + " appointment" + (rs.length === 1 ? "" : "s") +
-      (providerFilter ? " — Provider: " + providerFilter : "") +
-      (rs.length ? " — " + CHECKS.filter(function (c) { return by[c]; }).map(function (c) { return by[c] + " " + c.toLowerCase(); }).join(", ") : "") +
-      (rmIssues ? " — " + rmIssues + " remote-monitoring issue" + (rmIssues === 1 ? "" : "s") + " to address" : "");
+    var entries = scheduleEntries();
     $("printView").innerHTML =
       '<div class="p-head">' +
         "<h1>Device Clinic — Patient Schedule</h1>" +
         '<div class="p-date">' + dt.toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + "</div>" +
-        '<div class="p-meta">' + esc(meta) + "</div>" +
+        '<div class="p-meta">' + esc(scheduleSummary(entries, providerFilter)) + "</div>" +
       "</div>" +
       "<table><thead><tr><th>Time</th><th>Patient</th><th>Device</th><th>Provider</th><th>Check</th><th>Last Office</th><th>Remote</th><th>Notes</th></tr></thead><tbody>" +
-      rs.map(function (r) {
-        var dev = [abMfr[r.mfr] || r.mfr, r.dtype].filter(Boolean).join(" ");
+      entries.map(function (e) {
         return "<tr>" +
-          '<td class="p-time">' + esc(fmtTime(r.time)) + "</td>" +
-          '<td class="p-pt">' + esc(r.pt) + "</td>" +
-          '<td class="p-dev">' + esc(dev) + "</td>" +
-          '<td class="p-provider">' + esc(r.provider || "Tech") + "</td>" +
-          '<td class="p-chk">' + esc(abChk[r.check] || r.check) + "</td>" +
-          '<td class="p-lo">' + esc(fmtDate(r.lastOff)) + "</td>" +
-          '<td class="p-rm">' + esc(abRm[r.rm] || r.rm || "") + "</td>" +
-          "<td>" + esc(r.notes) + "</td></tr>";
+          '<td class="p-time">' + esc(e.time) + "</td>" +
+          '<td class="p-pt">' + esc(e.pt) + "</td>" +
+          '<td class="p-dev">' + esc(e.dev) + "</td>" +
+          '<td class="p-provider">' + esc(e.provider) + "</td>" +
+          '<td class="p-chk">' + esc(e.check) + "</td>" +
+          '<td class="p-lo">' + esc(e.lastOff) + "</td>" +
+          '<td class="p-rm">' + esc(e.rm) + "</td>" +
+          "<td>" + esc(e.notes) + "</td></tr>";
       }).join("") +
       "</tbody></table>";
   }
-  window.printSchedule = function () { buildPrintView(); window.print(); };
+  function browserPrintFallback() { buildPrintView(); window.print(); }
+  window.printSchedule = function () {
+    var name = scheduleFilename(curDate, providerFilter);
+    // The viewer tab is opened from the click itself — awaiting the builder first would spend the
+    // user activation the pop-up blocker checks. A blocked tab falls back to the browser printout
+    // rather than leaving the button doing nothing.
+    var viewer = reservePdfViewer(name, "PDF_Viewer.html");
+    if (!viewer) { browserPrintFallback(); return; }
+    setWsStatus("Building the schedule PDF…");
+    ensureSchedulePdfBuilder().then(function () {
+      var blob = buildSchedulePdfBlob();
+      if (!blob) throw new Error("the PDF builder did not load");
+      completePdfViewer(viewer, new File([blob], name, { type: "application/pdf" }));
+      setWsStatus("Schedule ready — print or save it from the viewer tab.", "ok");
+    }).catch(function (e) {
+      var why = (e && e.message) || "unknown error";
+      failPdfViewer(viewer, "Could not build the schedule PDF: " + why);
+      setWsStatus("Could not build the schedule PDF: " + why + " — use Ctrl/Cmd-P for the basic printout.", "warn");
+    });
+  };
   window.addEventListener("beforeprint", buildPrintView);
 
   /* ---------- database persistence (.crmdb container via src/crmdb-store.js) ---------- */
