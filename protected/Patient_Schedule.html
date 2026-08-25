@@ -1147,9 +1147,13 @@
       { k: "lastOff",  h: "Last Office", w: 52 },
       { k: "rm",       h: "Remote",      w: 54 }
     ];
-    var NOTE_LABEL_W = 46;                      // gutter holding the small NOTES caption
-    var NOTE_X = M + TEXT_X + NOTE_LABEL_W, NOTE_W = W - M - NOTE_X;
-    var ROW_H = 20, NOTE_H = 12, PAD = 7, ACCENT_X = M + 1.5;
+    // Line two hangs on the SAME grid as line one: its caption sits in the Time column and the
+    // notes themselves start under Patient. Caption and notes are one face at one size — only
+    // colour separates them — so the block reads as two rows of a table rather than as a heading
+    // with a paragraph stapled underneath.
+    var NOTE_X = M + TEXT_X + COLS[0].w, NOTE_W = W - M - NOTE_X;
+    var NOTE_PT = 9, NOTE_TOP = 7;              // notes type size; first note baseline below line one
+    var ROW_H = 20, NOTE_H = 12, PAD = 6, ACCENT_X = M + 1.5;
     var HEAD_FIRST = 34, HEAD_CONT = 20, BAND_H = 19;   // title block / continuation line / column band
 
     var entries = scheduleEntries();
@@ -1168,7 +1172,7 @@
     // Notes are the author's own paragraphs; keep their line breaks and wrap what is left.
     function noteLines(text) {
       if (!text) return [];
-      doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(NOTE_PT);
       var out = [];
       String(text).split(/\r?\n/).forEach(function (para) {
         if (!para.trim()) { out.push(""); return; }
@@ -1217,7 +1221,7 @@
     // Header heights are constants rather than whatever pageHeader() happened to return, because
     // the plan has to know where each KIND of page starts before a single one is drawn.
     var geom = { top: M + HEAD_FIRST + BAND_H, contTop: M + HEAD_CONT + BAND_H, bottom: H - M - 18,
-                 rowH: ROW_H, contH: 13, noteH: NOTE_H, pad: PAD, minSplit: 2 };
+                 rowH: ROW_H, contH: 15, noteH: NOTE_H, pad: PAD, minSplit: 2 };
     pageHeader(0);
     var pages = planSchedulePages(wrapped.map(function (ln) { return { noteLines: ln.length }; }), geom);
 
@@ -1260,19 +1264,18 @@
           doc.setTextColor(INK[0], INK[1], INK[2]);
           y += ROW_H;
         } else {
-          doc.setFont("helvetica", "italic"); doc.setFontSize(7);
+          doc.setFont("helvetica", "normal"); doc.setFontSize(NOTE_PT);
           doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
-          doc.text(fit(e.pt + " — notes continued", CW - 2 * TEXT_X), M + TEXT_X, y + 9);
+          doc.text(fit(e.pt + " — notes continued", CW - 2 * TEXT_X), M + TEXT_X, y + 10);
           doc.setTextColor(INK[0], INK[1], INK[2]);
-          y += 13;
+          y += 15;
         }
         if (lines.length) {
-          doc.setFont("helvetica", "bold"); doc.setFontSize(6.5);
-          doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
-          doc.text("NOTES", M + TEXT_X, y + 9);
-          doc.setFont("helvetica", "normal"); doc.setFontSize(9);
+          doc.setFont("helvetica", "normal"); doc.setFontSize(NOTE_PT);
+          doc.setTextColor(MUTED[0], MUTED[1], MUTED[2]);
+          doc.text("Notes", M + TEXT_X, y + NOTE_TOP);
           doc.setTextColor(INK[0], INK[1], INK[2]);
-          lines.forEach(function (ln, i) { doc.text(ln, NOTE_X, y + 9 + i * NOTE_H); });
+          lines.forEach(function (ln, i) { doc.text(ln, NOTE_X, y + NOTE_TOP + i * NOTE_H); });
           y += lines.length * NOTE_H;
         }
         doc.setDrawColor(RULE[0], RULE[1], RULE[2]);
