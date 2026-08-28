@@ -111,13 +111,6 @@ body.panning .page-stage { cursor: grabbing; }
     if (i > 0) params[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
   });
   var docName = params.name || "PDF";
-  // The CRM report is generated with jsPDF's standard Helvetica faces rather than embedded font
-  // files. In Chromium, pdf.js's normal @font-face/system-font substitution can occasionally bind
-  // those faces to a stale or incompatible cached font, while the exact same bytes render cleanly
-  // after download in the browser/OS PDF viewer. Render this small generated report with pdf.js's
-  // glyph-path fallback instead. It is deterministic and avoids the font cache entirely; large
-  // programmer PDFs retain the faster normal font-face path.
-  var isGeneratedCrmReport = /_CRM_Report\.pdf$/i.test(docName);
   document.title = docName;
   $("name").textContent = docName;
 
@@ -183,12 +176,7 @@ body.panning .page-stage { cursor: grabbing; }
 
   function open(buf) {
     // isEvalSupported false: this page's CSP has no 'unsafe-eval', and pdf.js is happy without it.
-    pdfjsLib.getDocument({
-      data: buf,
-      isEvalSupported: false,
-      disableFontFace: isGeneratedCrmReport,
-      useSystemFonts: !isGeneratedCrmReport
-    }).promise.then(function (d) {
+    pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise.then(function (d) {
       doc = d; total = d.numPages;
       statusEl.hidden = true;
       $("chromeBtn").hidden = $("printBtn").hidden = $("downloadBtn").hidden = $("tocBtn").hidden = false;

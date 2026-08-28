@@ -4010,40 +4010,25 @@ window.ensureReportPdfBuilder = function () {
   // runs on iPad). The File is resolved up front in buildFilesMenu so this can be.
   // getFile() re-assigns the MIME by extension, so a PDF renders inline in the browser's viewer
   // instead of downloading — which is the point: read the programmer report while filling the form.
-  /* In-app PDF viewer handoff — same shape as the Schedule's. The viewer tab's CSP can't fetch
-     a blob URL (connect-src 'none'), so it announces itself by id and the bytes go over by
-     postMessage as a transferred ArrayBuffer. The File stays mapped so a refreshed viewer tab
-     can re-ask while this page lives. */
-  var pdfViewerDocs = {};
-  var pdfViewerSends = {};
-  window.addEventListener('message', function (ev) {
-    if (ev.origin !== location.origin) return;
-    var m = ev.data || {};
-    if (m.type !== 'pdfviewer:ready' || !pdfViewerDocs[m.id] || !ev.source) return;
-    var src = ev.source, sendKey = m.id + ':' + (m.instance || 'legacy');
-    if (pdfViewerSends[sendKey]) return;
-    pdfViewerSends[sendKey] = true;
-    pdfViewerDocs[m.id].arrayBuffer().then(function (buf) {
-      // file:// pages have an opaque origin. `location.origin` is the string "null" there,
-      // which is not a valid postMessage targetOrigin; use the wildcard only for that local-file
-      // case. This matches the Schedule handoff and keeps hosted copies locked to same-origin.
-      var targetOrigin = location.origin === 'null' ? '*' : location.origin;
-      try { src.postMessage({ type: 'pdfviewer:doc', id: m.id, buf: buf }, targetOrigin, [buf]); }
-      catch (e) { delete pdfViewerSends[sendKey]; }
-    }).catch(function () { delete pdfViewerSends[sendKey]; });
-  });
+  // PDFs open through the browser's native renderer. The exact same Blob already renders cleanly
+  // after download, so this avoids a second pdf.js font/rendering stack in the clinical path.
   function openPdfInViewer(file, name) {
-    var id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    pdfViewerDocs[id] = file;
-    var w = window.open('PDF_Viewer.html#id=' + id + '&name=' + encodeURIComponent(name), '_blank');
-    if (!w) { delete pdfViewerDocs[id]; toast('Your browser blocked the viewer tab for ' + name + ' — allow pop-ups for this page.', 'err'); }
+    var payload = (file.name === name && file.type === 'application/pdf')
+      ? file : new File([file], name, { type: 'application/pdf' });
+    var url = URL.createObjectURL(payload);
+    var w = window.open(url + '#view=Fit', '_blank');
+    if (!w) {
+      URL.revokeObjectURL(url);
+      toast('Your browser blocked the new tab for ' + name + ' — allow pop-ups for this page.', 'err');
+      return null;
+    }
+    setTimeout(function () { URL.revokeObjectURL(url); }, 300000);
     return w;
   }
-  window.openPdfInViewer = openPdfInViewer;   // public: any block with a PDF Blob can use the snap viewer
+  window.openPdfInViewer = openPdfInViewer;   // public: any block with a PDF Blob can use the native viewer
   function openStoredFile(file, name) {
     name = name || file.name;
-    // PDFs go to the page-snapping in-app viewer (one wheel flick = one page, fit to the
-    // window); everything else keeps the plain browser tab.
+    // PDFs go to the browser's native viewer; everything else keeps the plain browser tab.
     if (/\.pdf$/i.test(name)) return !!openPdfInViewer(file, name);
     var url = URL.createObjectURL(file);
     var w = window.open(url, '_blank');
