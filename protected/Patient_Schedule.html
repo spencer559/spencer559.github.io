@@ -2190,18 +2190,20 @@
   // Pull every planned file out of the bundle as bytes. Blobs, never text — an Abbott .log
   // carries control delimiters that no decode/re-encode round trip would survive.
   function readPlannedFile(dir, item) {
-    // RTF is the one derived export format. Always rebuild it from the current generated text,
-    // even if a previous app release left a stored report.rtf in this slot; that stored copy may
-    // be older than the PDF/text after subsequent edits. Programmer files and PDFs remain bytes.
-    if (String(item.stored).toLowerCase() === 'report.rtf') {
-      return dir.getFileHandle('report.txt')
-        .then(function (fh) { return fh.getFile(); })
-        .then(function (txt) { return txt.text(); })
-        .then(function (text) { return new Blob([buildSummaryRtfFromText(text)], { type: 'application/rtf' }); });
-    }
     return dir.getFileHandle(item.stored)
       .then(function (fh) { return fh.getFile(); })
-      .then(function (file) { return file; });
+      .then(function (file) {
+        // The virtual database returns an empty handle for a missing path instead of rejecting.
+        if (String(item.stored).toLowerCase() === 'report.rtf' && !file.size) throw new Error('missing derived RTF');
+        return file;
+      })
+      .catch(function (e) {
+        if (String(item.stored).toLowerCase() !== 'report.rtf') throw e;
+        return dir.getFileHandle('report.txt')
+          .then(function (fh) { return fh.getFile(); })
+          .then(function (txt) { return txt.text(); })
+          .then(function (text) { return new Blob([buildSummaryRtfFromText(text)], { type: 'application/rtf' }); });
+      });
   }
   function readPlanFiles(plan) {
     var jobs = [];
@@ -2333,9 +2335,8 @@
     var dest = pickExportDestination(zipStem + '_' + curDate + '.zip');
     closeFileMenu();
     withPanelFilesFresh(slot, function () {
-      // Finalizing can create report.txt/report.pdf for the first time, so rebuild the entry's
-      // filename list after the frame publishes rather than exporting the menu's earlier snapshot.
-      // The export plan derives its Cerner RTF from that fresh report.txt.
+      // Finalizing can create report.rtf for the first time, so rebuild the entry's filename list
+      // after the frame publishes rather than exporting the menu's earlier snapshot.
       var fresh = currentExportEntries().filter(function (e) { return e.slot === slot; })[0] || entry;
       runPatientExport(dest, [fresh]);
     });

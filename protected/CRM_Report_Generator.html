@@ -3573,12 +3573,13 @@ window.ensureReportPdfBuilder = function () {
       })
       .catch(function (e) { setSync('Sync failed — reconnect', true); });
   }
-  // Build the original report set (report.json + report.txt + report.pdf) from the current form.
-  // Keep RTF out of this save/finalize path: the Schedule derives it from this same report.txt at
-  // download time. That preserves the pre-RTF PDF generation, database, and viewer pipeline byte
-  // for byte while still supplying the Cerner RTF in patient-folder exports.
-  // Guarded by `dirty` on the frequent triggers so we don't rebuild when nothing changed. Returns
-  // a promise that resolves once the shared copy is flushed.
+  // Build the full report set (report.json + report.txt + report.rtf + report.pdf) from the current
+  // form. RTF is stored as derived data like the PDF, but intentionally stays hidden from the
+  // Files menus; patient-folder exports use it for Cerner's Import command. Called on leave,
+  // patient-switch, backgrounding, and the Save button. All four are (re)created as a set, so
+  // PDF and RTF always describe the same form snapshot.
+  // on a patient. Guarded by `dirty` on the frequent triggers so we don't rebuild when nothing
+  // changed. Returns a promise that resolves once the shared copy is flushed.
   function finalizeReports() {
     if (!syncArmed || !slotRoot || !slotDate || !slotName) return (WS && WS.flush) ? WS.flush() : Promise.resolve();
     // The embedded panel can become usable before the idle-time jsPDF preload finishes. Join that
@@ -3590,6 +3591,9 @@ window.ensureReportPdfBuilder = function () {
       if (typeof buildSummaryLines === 'function') {
         var summaryLines = buildSummaryLines();
         jobs.push(WS.writeFile(dir, 'report.txt', summaryLines.join('\n')));
+        if (typeof buildSummaryRtf === 'function') {
+          jobs.push(WS.writeFile(dir, 'report.rtf', new Blob([buildSummaryRtf(summaryLines)], { type: 'application/rtf' })));
+        }
       }
       if (typeof buildReportPdfBlob !== 'function') throw new Error('PDF generator is unavailable');
       var pdf = buildReportPdfBlob();
@@ -3599,7 +3603,7 @@ window.ensureReportPdfBuilder = function () {
       return Promise.all(jobs);
     }).then(function () {
       dirty = false;
-      finalizedKey = slotKey();  // this patient's json+txt+pdf are now built AND published
+      finalizedKey = slotKey();  // this patient's json+txt+rtf+pdf are now built AND published
       clearTimeout(saveTimer);   // this rebuild supersedes whatever the autosave was about to stage
       // this flush publishes everything staged by the live sync too, so the cadence timer has
       // nothing left to do — cancel it rather than leaving a redundant commit armed.

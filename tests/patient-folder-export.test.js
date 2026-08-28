@@ -41,9 +41,7 @@ assert.match(functionSource(html, "pickExportDestination"), /showSaveFilePicker/
 assert.match(functionSource(html, "readPlannedFile"), /getFile\(\)/,
   "planned files must travel as stored bytes");
 assert.match(functionSource(html, "readPlannedFile"), /item\.stored.*report\.rtf[\s\S]*report\.txt/,
-  "RTF should always be rebuilt from the current generated report.txt");
-assert.doesNotMatch(functionSource(html, "readPlannedFile"), /missing derived RTF/,
-  "a stale stored RTF must never win over the current generated text");
+  "only a missing derived RTF may be rebuilt from generated report.txt");
 assert.doesNotMatch(functionSource(html, "readPlanFiles"), /\.text\(|TextDecoder|TextEncoder/,
   "the ordinary programmer-file path must never decode or re-encode source bytes");
 
