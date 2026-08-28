@@ -233,6 +233,7 @@
                   text-overflow:ellipsis; white-space:nowrap; }
   .crm-panel-slot { flex:0 0 auto; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
                     font-size:.68rem; color:var(--muted); }
+  .crm-panel-last-office { flex:0 0 auto; font-size:.72rem; color:var(--muted); white-space:nowrap; }
   .crm-panel-sync { margin-left:auto; flex:0 0 auto; font-size:.72rem; color:var(--green); }
   .crm-panel-sync.warn { color:var(--amber); }
   .crm-panel-hdr button { flex:0 0 auto; padding:4px 9px; font-size:.72rem; border-radius:6px; }
@@ -2625,6 +2626,7 @@
             '<span class="crm-panel-pt">' + esc(r.pt || "This patient") + '</span>' +
             '<button type="button" data-panel-split aria-pressed="false" disabled title="Open the report generator and programmer file in a full-screen split view">Split view</button>' +
             '<span class="crm-panel-slot">' + esc(slot) + '</span>' +
+            (r.lastOff ? '<span class="crm-panel-last-office">Last Office: ' + esc(fmtDate(r.lastOff)) + '</span>' : '') +
             '<span class="crm-panel-sync" data-panel-sync></span>' +
             '<select data-panel-view title="Show one of this patient\'s files beside the report" aria-label="File to view beside the report">' +
               '<option value="">Viewer off</option>' +
