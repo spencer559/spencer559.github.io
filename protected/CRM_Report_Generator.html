@@ -360,7 +360,6 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
   <button class="json-dd-item" onclick="exportJSON()">JSON</button>
   <button class="json-dd-item" onclick="closeMenus(); copyToClipboard();">Copy to Clipboard</button>
   <button class="json-dd-item rtf-drag-row" draggable="true" ondragstart="dragFormattedRtf(event)" onclick="exportFormattedRtf()" title="Drag this formatted RTF file into the Cerner note, or click to save it"><span class="rtf-drag-icon" aria-hidden="true">&#8599;</span>Formatted RTF — drag or save</button>
-  <div id="export-usb-extra"></div>
 </div>
 <input type="file" id="json-import-file" accept="application/json,.json" style="display:none" onchange="onJsonFileChosen(event)">
 <div id="db-handoff-guard" class="db-handoff-guard" hidden role="alertdialog" aria-modal="true" aria-labelledby="db-handoff-title" aria-describedby="db-handoff-copy">
@@ -2376,7 +2375,7 @@ function openSubMenu(e, id, build) {
   parent.style.display = 'none';
   item.setAttribute('aria-expanded', 'true');
 }
-function subExportMenu(e){ openSubMenu(e, 'export-dropdown', function () { if (window.buildExportExtra) window.buildExportExtra(); }); }
+function subExportMenu(e){ openSubMenu(e, 'export-dropdown'); }
 function subImportMenu(e){ openSubMenu(e, 'import-dropdown', function () { if (window.buildImportMenu) window.buildImportMenu(); }); }
 /* `build` fills the menu and MUST run before it is measured — the width is whatever the longest
    patient name makes it, so positioning an empty menu would place it by the wrong width. */
@@ -3221,7 +3220,6 @@ window.ensureReportPdfBuilder = function () {
   var lastOfficeEl = document.getElementById('last-office-status');
   var pdMenu = document.getElementById('patient-dropdown');
   var imMenu = document.getElementById('import-dropdown');
-  var exExtra = document.getElementById('export-usb-extra');
   var dbGuard = document.getElementById('db-handoff-guard');
   var dbGuardCopy = document.getElementById('db-handoff-copy');
   var dbUnlockBtn = document.getElementById('db-unlock-btn');
@@ -3465,9 +3463,7 @@ window.ensureReportPdfBuilder = function () {
     syncEl.textContent = msg;
   }
 
-  /* ---- app-bar button state. "Save DB" used to be its own button here; it moved into the Export
-     menu (buildExportExtra) to free the top-right slot for the Files menu, so the only app-bar
-     state left to track is the Files button. ---- */
+  /* ---- app-bar button state: the only dynamic control here is the patient Files button. ---- */
   function dbIsOpen() { return !!slotRoot || !!(WS && WS.isOpen && WS.isOpen()); }
   function updateFilesBtn() {
     var f = document.getElementById('files-btn'); if (!f) return;
@@ -3478,13 +3474,6 @@ window.ensureReportPdfBuilder = function () {
       ? "This patient's saved files — open the programmer report while you fill in the rest"
       : 'Pick a patient (Patient List) to see their files';
   }
-  window.saveDatabase = function () {
-    if (!WS || !WS.saveNow) return;
-    // force a full rebuild (json+txt+pdf) first, then write/download the whole database as a backup
-    (syncArmed ? finalizeReports() : Promise.resolve())
-      .then(function () { return WS.saveNow(); })
-      .catch(function (e) { toast('Save failed: ' + e.message, 'err'); });
-  };
   // Navigate to the Schedule only AFTER the working copy is flushed, so the files just
   // written here are guaranteed to be in the shared bundle the Schedule page reads.
   window.goToSchedule = function () {
@@ -4003,23 +3992,6 @@ window.ensureReportPdfBuilder = function () {
     imMenu.appendChild(toggleItem('Merge — keep what I’ve entered', mergeOn, setMergeOn));
   };
 
-  /* ---- Export menu extra: save all into the slot ---- */
-  window.buildExportExtra = function () {
-    exExtra.innerHTML = '';
-    if (supported && slotRoot && slotName) {
-      exExtra.appendChild(divEl());
-      exExtra.appendChild(item('Save all to patient folder (.json/.txt/.pdf)', saveAll));
-    }
-    // "Save DB" moved off the app bar into here. It needs an open database but NOT a selected
-    // patient, so it sits outside the block above.
-    if (dbIsOpen()) {
-      exExtra.appendChild(divEl());
-      exExtra.appendChild(item((WS && WS.canAutosave)
-        ? 'Save database now (autosaves anyway)'
-        : 'Save database to USB…', saveDatabase));
-    }
-  };
-
   /* ---- Files menu: this patient's saved files, opened as blobs in a new tab ---- */
   // Mirrors the Schedule's Files menu: only the two clinically useful fronts are listed — the
   // generated report.pdf and the raw programmer export. report.json/.txt are support files.
@@ -4211,25 +4183,6 @@ window.ensureReportPdfBuilder = function () {
       })
       .catch(function (e) { holder.appendChild(noteEl('Could not read this patient\'s files: ' + e.message)); });
   };
-  function saveAll() {
-    toast('Saving to USB…', '');
-    var builderReady = window.ensureReportPdfBuilder ? window.ensureReportPdfBuilder() : Promise.resolve();
-    builderReady.then(function () { return WS.slotDir(slotRoot, slotDate, slotName, true); }).then(function (dir) {
-      var summaryLines = buildSummaryLines();
-      var jobs = [
-        WS.writeFile(dir, 'report.json', JSON.stringify(collectFormData(), null, 2)),
-        WS.writeFile(dir, 'report.txt', summaryLines.join('\n')),
-        WS.writeFile(dir, 'report.rtf', new Blob([buildSummaryRtf(summaryLines)], { type: 'application/rtf' }))
-      ];
-      var pdf = (typeof buildReportPdfBlob === 'function') ? buildReportPdfBlob() : null;
-      if (pdf) jobs.push(WS.writeFile(dir, 'report.pdf', pdf));
-      return Promise.all(jobs).then(function () { return WS.flush ? WS.flush() : null; }).then(function () {
-        arm();
-        toast('Saved report.json + report.txt + report.rtf' + (pdf ? ' + report.pdf' : '') + ' to the patient folder', 'ok');
-      });
-    }).catch(function (e) { toast('Save failed: ' + e.message, 'err'); });
-  }
-
   /* ---- boot: quiet root pickup + hash routing ---- */
   function parseHash() {
     var m = (location.hash || '').match(/#slot=(\d{4}-\d{2}-\d{2})\/([A-Za-z0-9_]+)/);
