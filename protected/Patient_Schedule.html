@@ -204,6 +204,10 @@
   .file-menu-add { width:100%; border:1px dashed var(--border); border-radius:6px; background:transparent;
                    color:var(--muted); padding:7px; cursor:pointer; font:inherit; font-size:.74rem; }
   .file-menu-add:hover { color:var(--accent); border-color:var(--accent); }
+  .file-menu-patient-download { width:100%; margin-top:6px; border:1px solid var(--accent); border-radius:6px;
+                                background:rgba(88,166,255,.08); color:var(--accent); padding:7px;
+                                cursor:pointer; font:inherit; font-size:.74rem; font-weight:700; }
+  .file-menu-patient-download:hover { background:rgba(88,166,255,.16); }
   /* Same button, two ways in: click opens the picker, a file drag lights it up as a drop zone. */
   .file-menu-add.drop-over { color:var(--accent); border-color:var(--accent); border-style:solid;
                              background:rgba(88,166,255,.12); }
@@ -1885,10 +1889,14 @@
   }
   function isProgrammerReport(name) {
     var n = String(name).toLowerCase();
-    return n !== "report.pdf" && n !== "report.json" && n !== "report.txt";
+    return n !== "report.pdf" && n !== "report.json" && n !== "report.txt" && n !== "report.rtf";
   }
   function isScheduleReport(name) {
     return String(name).toLowerCase() === "report.pdf" || isProgrammerReport(name);
+  }
+  function isPatientExportFile(name) {
+    var n = String(name).toLowerCase();
+    return n === "report.pdf" || n === "report.rtf" || isProgrammerReport(name);
   }
   function chipOrder(name) {
     var n = String(name).toLowerCase();
@@ -1916,6 +1924,9 @@
     last = last.normalize ? last.normalize('NFKD').replace(/[\u0300-\u036f]/g, '') : last;
     last = last.replace(/[^A-Za-z0-9-]+/g, '_').replace(/^_+|_+$/g, '') || 'Patient';
     return last + '_' + date + '_CRM_Report.pdf';
+  }
+  function chartRtfFilename(patientName, date) {
+    return chartReportFilename(patientName, date).replace(/\.pdf$/i, '.rtf');
   }
   function renderSlotCell(td, slot, knownNames) {
     var namesPromise = knownNames !== null && knownNames !== undefined
@@ -1975,6 +1986,8 @@
         '" title="Remove ' + esc(name) + ' from this patient" aria-label="Remove ' + esc(name) + '">&times;</button></div>';
     });
     html += '<button type="button" class="file-menu-add" data-add="' + esc(slot) + '" role="menuitem" title="Click to choose files — or drag files here">+ Attach programmer file(s)</button>';
+    html += '<button type="button" class="file-menu-patient-download" data-download-patient="' + esc(slot) +
+      '" role="menuitem" title="Save this patient\'s generated PDF, Cerner RTF, and programmer files into one folder">Download patient</button>';
     menu.innerHTML = html; menu.dataset.slot = slot; menu.hidden = false;
     trigger.setAttribute("aria-expanded", "true");
     var r = trigger.getBoundingClientRect(), mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -2062,11 +2075,11 @@
      wants real files on disk, so this writes the day out in one pass, to a location picked in
      the OS file dialog (Downloads, a USB stick, a network share — anywhere):
 
-         <chosen folder>/<YYYY-MM-DD>/<Patient name>/<file>
+         <chosen folder>/<YYYY-MM-DD>/<schedule order> - <Patient name>/<file>
 
-     Only the files the Files menu lists travel: the generated report plus the raw programmer
-     exports. report.json / report.txt stay behind — they are this app's support files, not
-     documents anyone uploads to a chart.
+     The generated PDF, hidden Cerner RTF, and raw programmer exports travel. report.json and
+     report.txt stay behind — they are this app's support files, not documents anyone uploads to
+     a chart. The numeric folder prefix preserves the visible schedule order in Explorer/Finder.
 
      Scope follows "Print schedule": whatever the provider filter is currently showing.
 
@@ -2083,27 +2096,63 @@
     return s.slice(0, 80).replace(/[. ]+$/, '') || 'Unnamed patient';
   }
 
+  // Compatibility for reports finalized before report.rtf became part of the stored report set.
+  // report.txt is generated from the exact same summary lines, so wrapping it here recreates the
+  // native Arial 10 RTF without opening every older patient in the Report Generator first.
+  function buildSummaryRtfFromText(text) {
+    function rtfEsc(s) {
+      var out = '';
+      for (var i = 0; i < s.length; i++) {
+        var ch = s.charAt(i), code = s.charCodeAt(i);
+        if (ch === '\\' || ch === '{' || ch === '}') out += '\\' + ch;
+        else if (code > 127) out += '\\u' + code + '?';
+        else out += ch;
+      }
+      return out;
+    }
+    var body = String(text || '').replace(/\r\n?/g, '\n').split('\n').map(function (line) {
+      if (!line) return '';
+      var indent = (line.match(/^ +/) || [''])[0];
+      var lead = indent.replace(/ /g, '\\~');
+      var rest = rtfEsc(line.slice(indent.length));
+      return lead + (indent.length === 0 ? '\\b ' + rest + '\\b0 ' : rest);
+    }).join('\\par\n');
+    return '{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil\\fcharset0 Arial;}}\\f0\\fs20 ' + body + '}';
+  }
+
   // Lay the day out as folders. Deliberately pure — no DOM, no database — because the naming
   // rules are what actually lands on the stick and they are worth testing on their own.
   // `entries` is [{ slot, time, pt, names }] in the order the folders should be written.
   function buildPatientExportPlan(date, entries) {
     var kept = [], skipped = 0, counts = {};
-    (entries || []).forEach(function (e) {
-      var names = (e.names || []).filter(isScheduleReport).sort(function (a, b) {
-        return (chipOrder(a) - chipOrder(b)) || a.localeCompare(b);
+    (entries || []).forEach(function (e, sourceIndex) {
+      var sourceNames = (e.names || []).slice();
+      // Older finalized slots have report.txt but not report.rtf. Plan the RTF anyway; the read
+      // path below synthesizes it from that stored generated text.
+      if (sourceNames.some(function (n) { return String(n).toLowerCase() === 'report.txt'; }) &&
+          !sourceNames.some(function (n) { return String(n).toLowerCase() === 'report.rtf'; })) {
+        sourceNames.push('report.rtf');
+      }
+      var names = sourceNames.filter(isPatientExportFile).sort(function (a, b) {
+        var an = String(a).toLowerCase(), bn = String(b).toLowerCase();
+        var ao = an === 'report.pdf' ? 0 : (an === 'report.rtf' ? 1 : 2);
+        var bo = bn === 'report.pdf' ? 0 : (bn === 'report.rtf' ? 1 : 2);
+        return (ao - bo) || a.localeCompare(b);
       });
       if (!names.length) { skipped++; return; }          // no empty folders on the stick
       var base = safeFolderName(e.pt);
       counts[base.toLowerCase()] = (counts[base.toLowerCase()] || 0) + 1;
-      kept.push({ base: base, entry: e, names: names });
+      kept.push({ base: base, entry: e, names: names, order: Number(e.order) || (sourceIndex + 1) });
     });
-    var used = {}, folders = [];
+    var used = {}, folders = [], width = Math.max(2, String(Math.max.apply(Math, kept.map(function (k) { return k.order; }).concat([0]))).length);
     kept.forEach(function (k) {
       // Two appointments under one name (a check and a re-check the same day) would land in one
-      // folder and overwrite each other, so a repeated name carries its appointment time.
+      // folder without a prefix, but the schedule position makes every appointment distinct and
+      // also forces Explorer/Finder to retain the exact order seen on screen.
       var stem = counts[k.base.toLowerCase()] > 1
         ? k.base + ' ' + ((String(k.entry.time || '').replace(/[^0-9]/g, '') || '0000').slice(0, 4))
         : k.base;
+      stem = String(k.order).padStart(width, '0') + ' - ' + stem;
       var folder = stem, n = 2;
       while (used[folder.toLowerCase()]) folder = stem + ' (' + (n++) + ')';
       used[folder.toLowerCase()] = true;
@@ -2112,9 +2161,11 @@
         slot: k.entry.slot,
         patient: k.entry.pt || '',
         files: k.names.map(function (name) {
+          var lower = String(name).toLowerCase();
           return {
             stored: name,
-            out: String(name).toLowerCase() === 'report.pdf' ? chartReportFilename(k.entry.pt, date) : name
+            out: lower === 'report.pdf' ? chartReportFilename(k.entry.pt, date)
+              : (lower === 'report.rtf' ? chartRtfFilename(k.entry.pt, date) : name)
           };
         })
       });
@@ -2122,30 +2173,44 @@
     return { date: date, folders: folders, skipped: skipped };
   }
 
-  // The rows the export covers: the visible day, earliest first, one entry per patient folder.
+  // The rows the export covers: exactly the visible schedule order, one entry per patient folder.
   function currentExportEntries() {
     var seen = {}, out = [];
     var indexed = (WS && WS.filesBySlot) ? WS.filesBySlot(curDate) : {};
     visibleRows().map(function (x) { return x.r; })
-      .sort(function (a, b) { return timeVal(a.time) - timeVal(b.time); })
       .forEach(function (r) {
         var slot = WS ? WS.slotName(r.time, r.pt) : '';
         if (!slot || seen[slot]) return;               // identical time+name rows share one folder
         seen[slot] = true;
-        out.push({ slot: slot, time: r.time, pt: r.pt, names: (indexed[slot] || []).slice() });
+        out.push({ slot: slot, time: r.time, pt: r.pt, order: out.length + 1, names: (indexed[slot] || []).slice() });
       });
     return out;
   }
 
   // Pull every planned file out of the bundle as bytes. Blobs, never text — an Abbott .log
   // carries control delimiters that no decode/re-encode round trip would survive.
+  function readPlannedFile(dir, item) {
+    return dir.getFileHandle(item.stored)
+      .then(function (fh) { return fh.getFile(); })
+      .then(function (file) {
+        // The virtual database returns an empty handle for a missing path instead of rejecting.
+        if (String(item.stored).toLowerCase() === 'report.rtf' && !file.size) throw new Error('missing derived RTF');
+        return file;
+      })
+      .catch(function (e) {
+        if (String(item.stored).toLowerCase() !== 'report.rtf') throw e;
+        return dir.getFileHandle('report.txt')
+          .then(function (fh) { return fh.getFile(); })
+          .then(function (txt) { return txt.text(); })
+          .then(function (text) { return new Blob([buildSummaryRtfFromText(text)], { type: 'application/rtf' }); });
+      });
+  }
   function readPlanFiles(plan) {
     var jobs = [];
     plan.folders.forEach(function (f) {
       f.files.forEach(function (item) {
         jobs.push(WS.slotDir(wsRoot, plan.date, f.slot, false)
-          .then(function (dir) { return dir.getFileHandle(item.stored); })
-          .then(function (fh) { return fh.getFile(); })
+          .then(function (dir) { return readPlannedFile(dir, item); })
           .then(function (file) { return { folder: f.folder, name: item.out, file: file }; }));
       });
     });
@@ -2206,11 +2271,11 @@
   // open report, reading the bundle) spends the transient user activation the File System Access
   // API requires, and the picker then throws instead of appearing — so this goes first and the
   // rest of the export catches up with it.
-  function pickExportDestination() {
+  function pickExportDestination(zipName) {
     if (window.showDirectoryPicker) {
       return { kind: 'dir', handle: window.showDirectoryPicker({ id: 'crmPatientExport', mode: 'readwrite', startIn: 'downloads' }) };
     }
-    var name = 'Patients_' + curDate + '.zip';
+    var name = zipName || ('Patients_' + curDate + '.zip');
     if (window.showSaveFilePicker) {
       return {
         kind: 'zip', name: name,
@@ -2220,8 +2285,8 @@
     return { kind: 'zip', name: name, handle: Promise.resolve(null) };
   }
 
-  function runPatientExport(dest) {
-    var plan = buildPatientExportPlan(curDate, currentExportEntries());
+  function runPatientExport(dest, entries) {
+    var plan = buildPatientExportPlan(curDate, entries || currentExportEntries());
     var picked = dest.handle || Promise.resolve(null);
     if (!plan.folders.length) {
       picked.catch(function () {});                    // the dialog may still be open; ignore it
@@ -2259,6 +2324,23 @@
     if (openSlot) withPanelFilesFresh(openSlot, function () { runPatientExport(dest); });
     else runPatientExport(dest);
   };
+
+  function downloadPatient(slot) {
+    if (!wsRoot || !WS || !slot) { setWsStatus('Open a database and choose a patient first.', 'warn'); return; }
+    var entry = currentExportEntries().filter(function (e) { return e.slot === slot; })[0];
+    if (!entry) { setWsStatus('Could not find this patient on the visible schedule.', 'warn'); return; }
+    // Open the native picker synchronously from the Files-menu click. The report refresh follows
+    // while that dialog is open, preserving the same user-activation guarantee as the daily path.
+    var zipStem = safeFolderName(entry.pt).replace(/\s+/g, '_') || 'Patient';
+    var dest = pickExportDestination(zipStem + '_' + curDate + '.zip');
+    closeFileMenu();
+    withPanelFilesFresh(slot, function () {
+      // Finalizing can create report.rtf for the first time, so rebuild the entry's filename list
+      // after the frame publishes rather than exporting the menu's earlier snapshot.
+      var fresh = currentExportEntries().filter(function (e) { return e.slot === slot; })[0] || entry;
+      runPatientExport(dest, [fresh]);
+    });
+  }
 
   function validateGeneratedPdf(file) {
     if (!file || file.size < 16) return Promise.reject(new Error("the generated file is empty"));
@@ -2790,6 +2872,11 @@
     }
   });
   $("fileMenu").addEventListener("click", function (ev) {
+    var patientDownload = ev.target.closest("[data-download-patient]");
+    if (patientDownload && wsRoot) {
+      downloadPatient(patientDownload.dataset.downloadPatient);
+      return;
+    }
     var add = ev.target.closest("[data-add]");
     if (add && wsRoot) {
       pendingAddSlot = add.dataset.add; closeFileMenu();
@@ -2840,7 +2927,7 @@
         return files.reduce(function (chain, f) {
           return chain.then(function () {
             var name = f.name;
-            if (/^report\.(pdf|json|txt)$/i.test(name)) name = "prog-" + name;   // never clobber a generated report file
+            if (/^report\.(pdf|json|txt|rtf)$/i.test(name)) name = "prog-" + name;   // never clobber a generated report file
             return WS.writeFile(dir, name, f)
               .then(function () { done.push(name); },
                     function (e) { failed.push(f.name + " (" + e.message + ")"); });

@@ -244,7 +244,7 @@
   function baseName(p) { var i = p.lastIndexOf("/"); return i < 0 ? p : p.slice(i + 1); }
   function mimeFor(name) {
     var e = (String(name).split(".").pop() || "").toLowerCase();
-    return ({ pdf: "application/pdf", txt: "text/plain", log: "text/plain", csv: "text/csv",
+    return ({ pdf: "application/pdf", rtf: "application/rtf", txt: "text/plain", log: "text/plain", csv: "text/csv",
       json: "application/json", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", html: "text/html" })[e] || "";
   }
 

@@ -101,6 +101,9 @@ body { font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: 
 .json-dd-item.file-row:active { cursor: grabbing; }
 .json-dd-item.file-row .file-kind { flex: none; width: 62px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
 .json-dd-item.file-row .file-name { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 9.5px; color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; }
+.json-dd-item.rtf-drag-row { cursor: grab; border-top: 1px solid var(--border); }
+.json-dd-item.rtf-drag-row:active { cursor: grabbing; }
+.rtf-drag-row .rtf-drag-icon { display:inline-block; width:18px; color:var(--navy); font-weight:700; }
 /* Toggle rows in a dropdown (e.g. Import ▸ Merge): a state switch, not an action. The switch is
    pushed to the right edge and has fixed dimensions, so the label never shifts as it flips. */
 .json-dd-toggle { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
@@ -356,6 +359,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
   <button class="json-dd-item" onclick="exportSummary()">.txt</button>
   <button class="json-dd-item" onclick="exportJSON()">JSON</button>
   <button class="json-dd-item" onclick="closeMenus(); copyToClipboard();">Copy to Clipboard</button>
+  <button class="json-dd-item rtf-drag-row" draggable="true" ondragstart="dragFormattedRtf(event)" onclick="exportFormattedRtf()" title="Drag this formatted RTF file into the Cerner note, or click to save it"><span class="rtf-drag-icon" aria-hidden="true">&#8599;</span>Formatted RTF — drag or save</button>
   <div id="export-usb-extra"></div>
 </div>
 <input type="file" id="json-import-file" accept="application/json,.json" style="display:none" onchange="onJsonFileChosen(event)">
@@ -2293,6 +2297,31 @@ function exportSummary() {
   return saveFile(fileStamp('txt'), buildSummaryLines().join('\n'), 'text/plain');
 }
 
+// A real RTF file gives Cerner a native rich-text payload without asking the browser clipboard
+// to publish RTF (which web pages cannot do). The Export row is both draggable and clickable:
+// drag hands the target a File/DownloadURL immediately; click saves the same bytes for Cerner's
+// Insert/Import flow. All content is built locally from the current form at the user gesture.
+function formattedRtfFile() {
+  var name = fileStamp('rtf');
+  return new File([buildSummaryRtf(buildSummaryLines())], name, { type: 'application/rtf' });
+}
+
+function dragFormattedRtf(e) {
+  var dt = e.dataTransfer;
+  if (!dt) return;
+  var file = formattedRtfFile();
+  try { dt.items.add(file); } catch (_) { /* DownloadURL remains the native-app fallback. */ }
+  var url = URL.createObjectURL(file);
+  try { dt.setData('DownloadURL', file.type + ':' + file.name + ':' + url); } catch (_) {}
+  dt.effectAllowed = 'copy';
+  setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+}
+
+function exportFormattedRtf() {
+  var file = formattedRtfFile();
+  return saveFile(file.name, file, file.type);
+}
+
 function exportJSON() {
   return saveFile(fileStamp('json'), JSON.stringify(collectFormData(), null, 2), 'application/json');
 }
@@ -3555,10 +3584,11 @@ window.ensureReportPdfBuilder = function () {
       })
       .catch(function (e) { setSync('Sync failed — reconnect', true); });
   }
-  // Build the full report set (report.json + report.txt + report.pdf) from the current form and
-  // write it into the patient's slot, so the Schedule always shows every front — JSON, TXT and
-  // PDF — up to date. Called on leave, patient-switch, backgrounding, and the Save button. All
-  // three are (re)created even if they didn't exist yet, so a report appears as soon as you work
+  // Build the full report set (report.json + report.txt + report.rtf + report.pdf) from the current
+  // form. RTF is stored as derived data like the PDF, but intentionally stays hidden from the
+  // Files menus; patient-folder exports use it for Cerner's Import command. Called on leave,
+  // patient-switch, backgrounding, and the Save button. All four are (re)created as a set, so
+  // PDF and RTF always describe the same form snapshot.
   // on a patient. Guarded by `dirty` on the frequent triggers so we don't rebuild when nothing
   // changed. Returns a promise that resolves once the shared copy is flushed.
   function finalizeReports() {
@@ -3569,7 +3599,13 @@ window.ensureReportPdfBuilder = function () {
     var builderReady = window.ensureReportPdfBuilder ? window.ensureReportPdfBuilder() : Promise.resolve();
     return builderReady.then(function () { return WS.slotDir(slotRoot, slotDate, slotName, true); }).then(function (dir) {
       var jobs = [WS.writeFile(dir, 'report.json', JSON.stringify(collectFormData(), null, 2))];
-      if (typeof buildSummaryLines === 'function') jobs.push(WS.writeFile(dir, 'report.txt', buildSummaryLines().join('\n')));
+      if (typeof buildSummaryLines === 'function') {
+        var summaryLines = buildSummaryLines();
+        jobs.push(WS.writeFile(dir, 'report.txt', summaryLines.join('\n')));
+        if (typeof buildSummaryRtf === 'function') {
+          jobs.push(WS.writeFile(dir, 'report.rtf', new Blob([buildSummaryRtf(summaryLines)], { type: 'application/rtf' })));
+        }
+      }
       if (typeof buildReportPdfBlob !== 'function') throw new Error('PDF generator is unavailable');
       var pdf = buildReportPdfBlob();
       if (!pdf) throw new Error('PDF generator is unavailable');
@@ -3578,7 +3614,7 @@ window.ensureReportPdfBuilder = function () {
       return Promise.all(jobs);
     }).then(function () {
       dirty = false;
-      finalizedKey = slotKey();  // this patient's json+txt+pdf are now built AND published
+      finalizedKey = slotKey();  // this patient's json+txt+rtf+pdf are now built AND published
       clearTimeout(saveTimer);   // this rebuild supersedes whatever the autosave was about to stage
       // this flush publishes everything staged by the live sync too, so the cadence timer has
       // nothing left to do — cancel it rather than leaving a redundant commit armed.
@@ -3989,7 +4025,7 @@ window.ensureReportPdfBuilder = function () {
   // generated report.pdf and the raw programmer export. report.json/.txt are support files.
   function isProgrammerFile(n) {
     n = String(n).toLowerCase();
-    return n !== 'report.pdf' && n !== 'report.json' && n !== 'report.txt';
+    return n !== 'report.pdf' && n !== 'report.json' && n !== 'report.txt' && n !== 'report.rtf';
   }
   function isListableFile(n) { return String(n).toLowerCase() === 'report.pdf' || isProgrammerFile(n); }
   function fileKind(n) {
@@ -4179,15 +4215,17 @@ window.ensureReportPdfBuilder = function () {
     toast('Saving to USB…', '');
     var builderReady = window.ensureReportPdfBuilder ? window.ensureReportPdfBuilder() : Promise.resolve();
     builderReady.then(function () { return WS.slotDir(slotRoot, slotDate, slotName, true); }).then(function (dir) {
+      var summaryLines = buildSummaryLines();
       var jobs = [
         WS.writeFile(dir, 'report.json', JSON.stringify(collectFormData(), null, 2)),
-        WS.writeFile(dir, 'report.txt', buildSummaryLines().join('\n'))
+        WS.writeFile(dir, 'report.txt', summaryLines.join('\n')),
+        WS.writeFile(dir, 'report.rtf', new Blob([buildSummaryRtf(summaryLines)], { type: 'application/rtf' }))
       ];
       var pdf = (typeof buildReportPdfBlob === 'function') ? buildReportPdfBlob() : null;
       if (pdf) jobs.push(WS.writeFile(dir, 'report.pdf', pdf));
       return Promise.all(jobs).then(function () { return WS.flush ? WS.flush() : null; }).then(function () {
         arm();
-        toast('Saved report.json + report.txt' + (pdf ? ' + report.pdf' : '') + ' to the patient folder', 'ok');
+        toast('Saved report.json + report.txt + report.rtf' + (pdf ? ' + report.pdf' : '') + ' to the patient folder', 'ok');
       });
     }).catch(function (e) { toast('Save failed: ' + e.message, 'err'); });
   }
