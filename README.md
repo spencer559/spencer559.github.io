@@ -50,7 +50,7 @@ mileage/
 protected/
   index.html                        Developer deck (Cloudflare Access gates /protected and /protected/*)
   CRM_Report_Generator.html         THE ACTIVE APP — edit this one
-  PDF_Viewer.html                   Legacy local pdf.js viewer (patient PDFs now use the browser renderer)
+  PDF_Viewer.html                   Local PDF viewer used by the Schedule
   dashboard.html                    Command-center dashboard (single file)
   Patient_Schedule.html             Daily clinic schedule — the .crmdb's other page (see below)
   crmdb-container-design.md         Design note for the .crmdb container (written before the migration)
@@ -432,11 +432,9 @@ and a `flush()` (IndexedDB-only, no download) runs before every cross-page navig
 page opens the latest bundle. MIME types are re-assigned by extension on read, so a `report.pdf`
 chip still opens inline after a round-trip strips the raw blob's type.
 
-Patient PDFs open through the browser's native PDF renderer. The Schedule reserves a blank tab on
-the click before an asynchronous generated-report rebuild, then navigates it to the original Blob;
-this preserves popup-blocker compatibility without decoding or re-encoding the PDF. The inline
-split embeds the same native Blob directly. File-menu download buttons retain the system **Save
-As** picker on supported Chromium browsers.
+The custom PDF viewer's **Download** button uses the system **Save As** picker on supported
+Chromium browsers, allowing a USB drive or any other folder to be selected. Browsers without the
+File System Access picker retain the standard download-to-default-folder behavior.
 
 **Schedule-side features built on the container:**
 - **Database menu** (replaces the old dual "schedule file" + "USB workspace" menus): Open / New

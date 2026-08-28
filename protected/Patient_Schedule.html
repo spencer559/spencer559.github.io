@@ -1007,7 +1007,7 @@
 
   /* ---------- printed schedule -------------------------------------------------------------
      "Print schedule" builds a real, selectable vector PDF (vendored jsPDF, the same builder the
-     Report Generator uses for report.pdf) and hands it to the browser's native viewer, whose Print and
+     Report Generator uses for report.pdf) and hands it to the in-app viewer, whose Print and
      Download buttons then cover both a paper copy and a saved one. #printView and the @media
      print rules stay behind it as the fallback: Ctrl/Cmd-P still produces the browser printout,
      and so does a session where the builder cannot load or the viewer tab is blocked.
@@ -1362,7 +1362,7 @@
     // The viewer tab is opened from the click itself — awaiting the builder first would spend the
     // user activation the pop-up blocker checks. A blocked tab falls back to the browser printout
     // rather than leaving the button doing nothing.
-    var viewer = reservePdfViewer(name);
+    var viewer = reservePdfViewer(name, "PDF_Viewer.html");
     if (!viewer) { browserPrintFallback(); return; }
     setWsStatus("Building the schedule PDF…");
     ensureSchedulePdfBuilder().then(function () {
@@ -2001,7 +2001,7 @@
     // document, so the menu can sit open while the tech keeps typing, and the bytes behind these
     // rows can go stale between opening the menu and picking a file.
     var viewerName = String(name).toLowerCase() === 'report.pdf' ? generatedReportFilename(slot, curDate) : name;
-    var viewer = /\.pdf$/i.test(name) ? reservePdfViewer(viewerName) : null;
+    var viewer = /\.pdf$/i.test(name) ? reservePdfViewer(viewerName, "PDF_Viewer.html") : null;
     if (/\.pdf$/i.test(name) && !viewer) return;
     if (String(name).toLowerCase() === "report.pdf" && (!panel || panel.date !== curDate || panel.slot !== slot)) {
       setWsStatus("Rebuilding this patient's generated report…");
@@ -2190,20 +2190,18 @@
   // Pull every planned file out of the bundle as bytes. Blobs, never text — an Abbott .log
   // carries control delimiters that no decode/re-encode round trip would survive.
   function readPlannedFile(dir, item) {
+    // RTF is the one derived export format. Always rebuild it from the current generated text,
+    // even if a previous app release left a stored report.rtf in this slot; that stored copy may
+    // be older than the PDF/text after subsequent edits. Programmer files and PDFs remain bytes.
+    if (String(item.stored).toLowerCase() === 'report.rtf') {
+      return dir.getFileHandle('report.txt')
+        .then(function (fh) { return fh.getFile(); })
+        .then(function (txt) { return txt.text(); })
+        .then(function (text) { return new Blob([buildSummaryRtfFromText(text)], { type: 'application/rtf' }); });
+    }
     return dir.getFileHandle(item.stored)
       .then(function (fh) { return fh.getFile(); })
-      .then(function (file) {
-        // The virtual database returns an empty handle for a missing path instead of rejecting.
-        if (String(item.stored).toLowerCase() === 'report.rtf' && !file.size) throw new Error('missing derived RTF');
-        return file;
-      })
-      .catch(function (e) {
-        if (String(item.stored).toLowerCase() !== 'report.rtf') throw e;
-        return dir.getFileHandle('report.txt')
-          .then(function (fh) { return fh.getFile(); })
-          .then(function (txt) { return txt.text(); })
-          .then(function (text) { return new Blob([buildSummaryRtfFromText(text)], { type: 'application/rtf' }); });
-      });
+      .then(function (file) { return file; });
   }
   function readPlanFiles(plan) {
     var jobs = [];
@@ -2335,8 +2333,9 @@
     var dest = pickExportDestination(zipStem + '_' + curDate + '.zip');
     closeFileMenu();
     withPanelFilesFresh(slot, function () {
-      // Finalizing can create report.rtf for the first time, so rebuild the entry's filename list
-      // after the frame publishes rather than exporting the menu's earlier snapshot.
+      // Finalizing can create report.txt/report.pdf for the first time, so rebuild the entry's
+      // filename list after the frame publishes rather than exporting the menu's earlier snapshot.
+      // The export plan derives its Cerner RTF from that fresh report.txt.
       var fresh = currentExportEntries().filter(function (e) { return e.slot === slot; })[0] || entry;
       runPatientExport(dest, [fresh]);
     });
@@ -2355,7 +2354,8 @@
       .then(function (dir) { return dir.getFileHandle(name); })
       .then(function (fh) { return fh.getFile(); })
       .then(function (file) {
-        // PDFs go to the browser's native viewer; everything else keeps the plain browser tab.
+        // PDFs go to the page-snapping in-app viewer (one wheel flick = one page, fit to the
+        // window); everything else keeps the plain browser tab.
         if (/\.pdf$/i.test(name)) {
           var checked = String(name).toLowerCase() === "report.pdf" ? validateGeneratedPdf(file) : Promise.resolve(file);
           return checked.then(function (validFile) { completePdfViewer(viewer, validFile); });
@@ -2370,46 +2370,82 @@
       });
   }
 
-  /* ---------- native PDF viewer handoff --------------------------------------------------
-     Generated reports are rebuilt asynchronously, after the click that requested them. Reserve
-     a blank tab synchronously so popup blockers are satisfied, then navigate that tab to the
-     original PDF Blob when it is ready. The browser's native renderer displays the exact same
-     bytes as a downloaded copy and avoids the custom pdf.js font/rendering failures. */
-  function reservePdfViewer(name) {
+  /* ---------- in-app PDF viewer handoff --------------------------------------------------
+     The viewer opens as its own TAB (the schedule/panel keeps the screen), but its CSP —
+     connect-src 'none', like every page here — means it cannot fetch a blob URL. So the bytes
+     travel by postMessage instead: this page holds the File under a one-shot id, the viewer
+     announces itself with that id, and the reply transfers the ArrayBuffer (zero-copy). The
+     File stays in the map so a refreshed viewer tab can ask again while this page lives. */
+  var pdfViewerDocs = {};
+  var pdfViewerSends = {};
+  var pdfViewerPending = {};
+  var pdfViewerReady = {};
+  function clearPdfViewerSendState(id) {
+    Object.keys(pdfViewerSends).forEach(function (k) { if (k.indexOf(id + ":") === 0) delete pdfViewerSends[k]; });
+  }
+  function sendPdfViewerDoc(id, target, instance) {
+    var file = pdfViewerDocs[id];
+    if (!file || !target) return;
+    // Ready messages repeat until delivery. Key the in-flight/read work by this viewer-page
+    // instance so one large PDF is materialized once, while refreshes can still request it again.
+    var sendKey = id + ":" + (instance || "legacy");
+    if (pdfViewerSends[sendKey]) return;
+    pdfViewerSends[sendKey] = true;
+    file.arrayBuffer().then(function (buf) {
+      // Opaque file:// origins cannot be used as a targetOrigin. Hosted copies still use the
+      // exact same-origin value; the wildcard is only a local-file compatibility fallback.
+      var targetOrigin = location.origin === "null" ? "*" : location.origin;
+      target.postMessage({ type: "pdfviewer:doc", id: id, buf: buf }, targetOrigin, [buf]);
+    }).catch(function (e) {
+      delete pdfViewerSends[sendKey];
+      setWsStatus("Could not send the PDF to the viewer: " + e.message, "warn");
+    });
+  }
+  window.addEventListener("message", function (ev) {
+    if (ev.origin !== location.origin) return;
+    var m = ev.data || {};
+    if (m.type !== "pdfviewer:ready" || !ev.source) return;
+    if (pdfViewerPending[m.id] && !pdfViewerDocs[m.id]) {
+      pdfViewerReady[m.id] = { target: ev.source, instance: m.instance };
+      return;
+    }
+    if (!pdfViewerDocs[m.id]) return;
+    sendPdfViewerDoc(m.id, ev.source, m.instance);
+  });
+  function reservePdfViewer(name, viewerPath) {
     var id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    var w = window.open("about:blank", "_blank");
+    pdfViewerPending[id] = true;
+    var w = window.open(viewerPath + "#id=" + id + "&name=" + encodeURIComponent(name), "_blank");
     if (!w) {
+      delete pdfViewerPending[id]; clearPdfViewerSendState(id);
       setWsStatus("Your browser blocked the viewer tab for " + name + " — allow pop-ups for this page.", "warn");
       return null;
     }
-    try {
-      w.document.title = name;
-      w.document.body.style.cssText = "margin:0;background:#23272e;color:#dfe5ec;font:13px system-ui;display:grid;place-items:center;height:100vh";
-      w.document.body.textContent = "Preparing " + name + "…";
-    } catch (e) {}
     return { id: id, win: w, name: name };
   }
   function completePdfViewer(viewer, file) {
     if (!viewer || !file) return;
-    var payload = (file.name === viewer.name && file.type === "application/pdf")
-      ? file : new File([file], viewer.name, { type: "application/pdf" });
-    var url = URL.createObjectURL(payload);
-    try { viewer.win.location.replace(url + "#view=Fit"); }
-    catch (e) { viewer.win.location.href = url + "#view=Fit"; }
-    // The native viewer has loaded its own copy well before this; keep a generous window for slow
-    // devices and for the toolbar's initial print/download actions.
-    setTimeout(function () { URL.revokeObjectURL(url); }, 300000);
+    pdfViewerDocs[viewer.id] = file;
+    delete pdfViewerPending[viewer.id];
+    var ready = pdfViewerReady[viewer.id];
+    if (ready) {
+      delete pdfViewerReady[viewer.id];
+      sendPdfViewerDoc(viewer.id, ready.target, ready.instance);
+    }
   }
   function failPdfViewer(viewer, message) {
     if (!viewer) return;
+    delete pdfViewerPending[viewer.id]; delete pdfViewerDocs[viewer.id]; delete pdfViewerReady[viewer.id];
+    clearPdfViewerSendState(viewer.id);
     try {
       if (viewer.win && !viewer.win.closed) {
-        viewer.win.document.body.textContent = message;
+        var viewerOrigin = location.origin === "null" ? "*" : location.origin;
+        viewer.win.postMessage({ type: "pdfviewer:error", id: viewer.id, message: message }, viewerOrigin);
       }
     } catch (e) {}
   }
-  function openPdfInViewer(file, name) {
-    var viewer = reservePdfViewer(name);
+  function openPdfInViewer(file, name, viewerPath) {
+    var viewer = reservePdfViewer(name, viewerPath);
     if (viewer) completePdfViewer(viewer, file);
   }
   /* ---------- inline CRM report panel ----------------------------------------------------
@@ -2535,9 +2571,9 @@
     if (!panel) return;
     var tr = panel.tr;
     if (panel.viewDocId) {
-      panel.viewDocId = null;
+      delete pdfViewerDocs[panel.viewDocId];   // the viewer frame dies with the row
+      clearPdfViewerSendState(panel.viewDocId);
     }
-    if (panel.viewUrl) { URL.revokeObjectURL(panel.viewUrl); panel.viewUrl = null; }
     document.body.classList.remove("crm-split-open");
     panel = null;
     window.removeEventListener("resize", sizePanel);
@@ -2629,7 +2665,8 @@
 
   /* ---- the split's right side: one of this patient's files beside the report --------------
      The switcher lists the slot's files; picking one loads it into the right pane — PDFs into
-     the browser's native PDF renderer, text files (.log — Abbott's export — .txt, .json)
+     the snap viewer (an embedded PDF_Viewer.html, fed over the same pdfviewer:ready/doc
+     handshake the standalone tab uses), text files (.log — Abbott's export — .txt, .json)
      straight into a <pre>. Opening CRM leaves this viewer off; the Split view button chooses the
      first programmer PDF when the user asks for the larger two-pane workspace. */
   function populatePanelViewer(auto) {
@@ -2692,9 +2729,9 @@
     if (!panel) return;
     var viewer = panel.tr.querySelector(".crm-viewer"), divider = panel.tr.querySelector(".crm-divider");
     if (panel.viewDocId) {
+      delete pdfViewerDocs[panel.viewDocId]; clearPdfViewerSendState(panel.viewDocId);
       panel.viewDocId = null;
     }
-    if (panel.viewUrl) { URL.revokeObjectURL(panel.viewUrl); panel.viewUrl = null; }
     if (!name) {
       viewer.hidden = true; divider.hidden = true; viewer.innerHTML = "";
       // Clear any dragged split ratio, or the report frame would stay at its dragged width
@@ -2712,11 +2749,12 @@
           if (!panel) return;
           viewer.hidden = false; divider.hidden = false;
           if (/\.pdf$/i.test(name)) {
+            var id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+            pdfViewerDocs[id] = file;
+            panel.viewDocId = id;
             var viewerName = String(name).toLowerCase() === 'report.pdf' ? generatedReportFilename(panel.slot, panel.date) : name;
-            var payload = (file.name === viewerName && file.type === 'application/pdf')
-              ? file : new File([file], viewerName, { type: 'application/pdf' });
-            panel.viewUrl = URL.createObjectURL(payload);
-            viewer.innerHTML = '<iframe title="' + esc(viewerName) + '" src="' + esc(panel.viewUrl) + '#view=Fit"></iframe>';
+            viewer.innerHTML = '<iframe title="' + esc(viewerName) + '" src="PDF_Viewer.html#embed=1&id=' + id +
+              "&name=" + encodeURIComponent(viewerName) + '"></iframe>';
           } else {
             file.text().then(function (t) {
               if (!panel) return;
