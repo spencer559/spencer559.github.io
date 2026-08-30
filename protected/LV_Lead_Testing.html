@@ -186,9 +186,10 @@ textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
   padding: 10px 11px; transition: border-color .16s ease, background .16s ease;
 }
 .vec:hover { border-color: var(--border-strong); }
-/* The left stripe is the at-a-glance answer to "have I done this one yet" — grey untouched,
-   amber started, green complete in both positions. It is the whole point of being able to
-   run down a 16-vector list without re-reading every cell. */
+/* The left stripe answers "have I done this one yet, in the position I'm in" — grey
+   untouched, amber started, green complete. It is the whole point of being able to run down
+   a 16-vector list without re-reading every cell. The chips beside it stay cross-position,
+   so the row still shows what the OTHER position is missing. */
 .vec[data-status="none"]    { box-shadow: inset 3px 0 0 var(--status-none); }
 .vec[data-status="partial"] { box-shadow: inset 3px 0 0 var(--amber); }
 .vec[data-status="done"]    { box-shadow: inset 3px 0 0 var(--green); background: var(--card); }
@@ -406,7 +407,7 @@ pre.out {
       <button type="button" id="pos-sitting" aria-pressed="true"  onclick="setPosition('sitting')">Sitting</button>
       <button type="button" id="pos-supine"  aria-pressed="false" onclick="setPosition('supine')">Supine</button>
     </div>
-    <span class="pos-help">Tinted fields belong to the selected position. Impedance and QRS are shared.</span>
+    <span class="pos-help">Tinted fields are still empty. Impedance and QRS are shared across both positions.</span>
   </div>
 
   <!-- ============================================================ VECTORS -->
@@ -417,7 +418,7 @@ pre.out {
         <button type="button" class="btn" onclick="addVector()">+ Add vector</button>
         <button type="button" class="btn" onclick="clearMeasurements()">Clear measurements</button>
         <button type="button" class="btn btn-danger" onclick="removeAllVectors()">Remove all</button>
-        <div class="seg" role="group" aria-label="Filter vectors">
+        <div class="seg" role="group" aria-label="Filter vectors by the selected position">
           <button type="button" id="flt-all" aria-pressed="true" onclick="setFilter('all')">All</button>
           <button type="button" id="flt-untested" aria-pressed="false" onclick="setFilter('untested')">To do</button>
           <button type="button" id="flt-done" aria-pressed="false" onclick="setFilter('done')">Done</button>
@@ -644,19 +645,23 @@ function hasAnyData(v) {
   return !!(v.impedance || v.qrs) || POSITIONS.some(function (p) { return positionFilled(v, p); });
 }
 
-/* A position counts as TESTED once it has both a threshold and an explicit phrenic answer.
-   Pulse width is tinted when empty like the others, but is deliberately not required here:
-   a threshold recorded at the lab's standard PW is still a tested vector, and demanding it
-   would leave rows stuck on amber forever for anyone who doesn't retype 0.5 sixteen times. */
+/* A position counts as TESTED once it has a threshold, a pulse width, and an explicit
+   phrenic answer. Impedance and QRS are excluded on purpose: they belong to the vector, not
+   to a position, so letting them count would mark a vector done in a position it was never
+   tested in. The voltage at which phrenic capture appears is likewise not required — it only
+   exists when PNS is present, and a plain Yes/No is a complete answer. */
 function positionComplete(v, p) {
   var d = v.byPosition[p] || {};
-  return !!(d.threshold && d.phrenic);
+  return !!(d.threshold && d.pw && d.phrenic);
 }
 
-function vectorStatus(v) {
-  var done = POSITIONS.filter(function (p) { return positionComplete(v, p); }).length;
-  if (done === POSITIONS.length) return "done";
-  if (done > 0 || hasAnyData(v)) return "partial";
+/* Status is per POSITION, not per vector. The work is done one position at a time — every
+   vector sitting, then the patient lies down and every vector again — so "done" has to mean
+   "done in the position I am currently working", or the stripe and the filter would both be
+   answering a question nobody asked mid-pass. */
+function positionStatus(v, p) {
+  if (positionComplete(v, p)) return "done";
+  if (positionFilled(v, p)) return "partial";
   return "none";
 }
 
@@ -712,7 +717,7 @@ function applyFilter() {
   for (i = 0; i < rows.length; i++) {
     v = vectorById(rows[i].dataset.vid);
     if (!v) continue;
-    st = vectorStatus(v);
+    st = positionStatus(v, position);
     show = vecFilter === "all" || (vecFilter === "done" ? st === "done" : st !== "done");
     rows[i].classList.toggle("is-hidden", !show);
   }
@@ -735,7 +740,7 @@ function vectorNode(v) {
   var d = v.byPosition[position];
   var wrap = el("div", "vec" + (v.candidate ? " is-candidate" : ""));
   wrap.dataset.vid = v.id;
-  wrap.setAttribute("data-status", vectorStatus(v));
+  wrap.setAttribute("data-status", positionStatus(v, position));
 
   /* --- header: name, position chips, candidate star, delete --- */
   var top = el("div", "vec-top");
@@ -818,7 +823,7 @@ function refreshStatus() {
     row = rows[i];
     v = vectorById(row.dataset.vid);
     if (!v) continue;
-    row.setAttribute("data-status", vectorStatus(v));
+    row.setAttribute("data-status", positionStatus(v, position));
     chips = row.querySelectorAll(".chip");
     POSITIONS.forEach(function (p, j) {
       if (!chips[j]) return;
@@ -827,7 +832,7 @@ function refreshStatus() {
     });
   }
   var total = state.vectors.length;
-  var done = state.vectors.filter(function (x) { return vectorStatus(x) === "done"; }).length;
+  var done = state.vectors.filter(function (x) { return positionComplete(x, position); }).length;
   document.getElementById("vec-count").textContent =
     total ? done + " / " + total + " tested · " + POS_LABEL[position] : "";
 }
