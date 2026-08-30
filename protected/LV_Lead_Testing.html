@@ -13,157 +13,229 @@
 <title>LV Lead Testing — Capture</title>
 
 <style>
+/* ------------------------------------------------------------------ THEME
+   Every colour is a token so the dark palette is a swap, not a second stylesheet.
+   The theme is resolved to an explicit data-theme in the <head> before first paint,
+   so there is no light flash and no need to duplicate the palette in a media query. */
 :root {
-  --navy: #1e3a5f;
-  --navy-lt: #e6eef6;
-  --navy-mid: #c8d8e8;
-  --bg: #d0d6df;
-  --card: #fff;
-  --text: #111;
-  --text-soft: #556;
-  --border: #cdd5df;
-  --input-bg: #f7f9fb;
-  --green: #2d7d46;
-  --amber: #c87000;
-  --red: #b03030;
-  /* Position-dependent fields are tinted so it is obvious at a glance which values the
-     Supine/Sitting toggle swaps out and which ones are shared across both. */
-  --pos-tint: #fff6e8;
-  --pos-edge: #e8c79a;
+  color-scheme: light;
+  --bg:#eef1f5;  --card:#ffffff;  --surface-2:#f6f8fb;  --surface-3:#fbfcfd;
+  --text:#151a21; --text-soft:#5a6675; --text-faint:#98a3b0;
+  --border:#dde3ea; --border-strong:#c7d1dd;
+  --accent:#1e3a5f; --accent-hi:#16304f; --accent-fg:#ffffff;
+  --accent-text:#1e3a5f; --accent-soft:#e9f0f7; --accent-edge:#c3d4e6;
+  --input-bg:#f7f9fb; --input-focus:#ffffff;
+  --green:#2d7d46; --amber:#b46a00; --red:#b03030; --red-edge:#e2c0c0; --red-bg:#fdf3f3;
+  --pos-tint:#fff7ea; --pos-edge:#e7c69b; --pos-text:#8a5a12;
+  --star:#dfa300; --star-off:#c2cad5; --final-bg:#eef7ee;
+  --shadow-sm:0 1px 2px rgba(16,28,44,.05), 0 1px 3px rgba(16,28,44,.07);
+  --shadow-md:0 3px 10px rgba(16,28,44,.10);
+  --shadow-bar:0 1px 0 rgba(16,28,44,.05), 0 2px 10px rgba(16,28,44,.06);
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#0e1218;  --card:#171d26;  --surface-2:#131922;  --surface-3:#1b222c;
+  --text:#e7edf5; --text-soft:#9aa7b8; --text-faint:#6b7788;
+  --border:#29323f; --border-strong:#3a4658;
+  --accent:#2b5580; --accent-hi:#376a9c; --accent-fg:#f2f7fc;
+  --accent-text:#8dbdea; --accent-soft:#192432; --accent-edge:#2e4a68;
+  --input-bg:#121822; --input-focus:#0d1219;
+  --green:#5cbd7a; --amber:#d99a3c; --red:#ef8888; --red-edge:#5a3232; --red-bg:#2a1a1a;
+  --pos-tint:#2a2314; --pos-edge:#5d4b25; --pos-text:#d9b476;
+  --star:#f0b429; --star-off:#47546a; --final-bg:#17281d;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.45);
+  --shadow-md:0 3px 12px rgba(0,0,0,.5);
+  --shadow-bar:0 1px 0 rgba(0,0,0,.5), 0 2px 12px rgba(0,0,0,.35);
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* Flipping the theme should be instant. Without this, every transitioned surface, border and
+   button cross-fades on its own timing and the switch reads as a muddy smear rather than a
+   change of mode. Applied only for the duration of the swap. */
+:root.theme-switching *, :root.theme-switching *::before, :root.theme-switching *::after {
+  transition: none !important;
+}
 html { font-size: 13px; -webkit-text-size-adjust: 100%; }
 body {
-  font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text);
-  line-height: 1.4; padding-bottom: 60px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, Helvetica, sans-serif;
+  background: var(--bg); color: var(--text); line-height: 1.45; padding-bottom: 64px;
 }
 
 /* ---------------------------------------------------------------- app bar */
 .app-bar {
   position: sticky; top: 0; z-index: 40;
-  background: #fff; border-bottom: 1px solid var(--border);
-  padding: 0 12px; min-height: 46px;
-  display: flex; align-items: center; gap: 10px;
-  box-shadow: 0 1px 5px rgba(0,0,0,.1);
+  background: var(--card); border-bottom: 1px solid var(--border);
+  padding: 7px 12px; display: flex; align-items: center; gap: 10px;
+  box-shadow: var(--shadow-bar);
 }
-.brand { font-size: 13px; font-weight: 700; color: var(--navy); letter-spacing: .2px; white-space: nowrap; }
-.brand a { color: inherit; text-decoration: none; opacity: .55; font-weight: 400; }
-.brand a:hover { opacity: 1; }
-.save-status { font-size: 10px; color: #999; white-space: nowrap; }
+.titles { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.brand { font-size: 14px; font-weight: 700; color: var(--text); letter-spacing: -.1px; white-space: nowrap; }
+.save-status { font-size: 10px; color: var(--text-faint); white-space: nowrap; }
 .save-status.saved { color: var(--green); }
 .save-status.dirty { color: var(--amber); }
-.bar-actions { margin-left: auto; display: flex; gap: 6px; }
+.bar-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+
+/* Icon buttons: the back-to-deck control and the theme switch. Square, quiet, and the same
+   size as each other so the bar reads as one row of controls rather than mixed furniture. */
+.icon-btn {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: 7px; background: transparent;
+  color: var(--text-soft); cursor: pointer; text-decoration: none;
+  transition: background .14s ease, color .14s ease, border-color .14s ease;
+}
+.icon-btn:hover { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-edge); }
+.icon-btn:active { transform: translateY(1px); }
+.icon-btn svg { display: block; }
 
 .btn {
   padding: 6px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .3px; border-radius: 3px; border: 1px solid var(--border);
-  cursor: pointer; font-family: inherit; background: #f3f5f8; color: var(--text-soft);
-  transition: background .1s, color .1s;
+  letter-spacing: .4px; border-radius: 6px; border: 1px solid var(--border-strong);
+  cursor: pointer; font-family: inherit; background: var(--surface-2); color: var(--text-soft);
+  transition: background .14s ease, color .14s ease, border-color .14s ease;
 }
-.btn:hover { background: #e5e9ef; }
-.btn-primary { background: var(--navy); color: #fff; border-color: var(--navy); }
-.btn-primary:hover { background: #162e4d; }
-.btn-danger { background: #fff; color: var(--red); border-color: #dbb; }
-.btn-danger:hover { background: #fdf0f0; }
-.btn:disabled { background: #eef1f5; color: #aab; border-color: var(--border); cursor: default; }
+.btn:hover { background: var(--accent-soft); color: var(--accent-text); border-color: var(--accent-edge); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent-hi); color: var(--accent-fg); border-color: var(--accent-hi); }
+.btn-danger { background: transparent; color: var(--red); border-color: var(--red-edge); }
+.btn-danger:hover { background: var(--red-bg); color: var(--red); border-color: var(--red); }
+.btn:disabled { background: var(--surface-2); color: var(--text-faint); border-color: var(--border); cursor: default; transform: none; }
 
 /* ---------------------------------------------------------------- layout */
-.main { max-width: 1080px; margin: 0 auto; padding: 14px 10px 0; }
-.section { background: var(--card); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
-.sec-hdr {
-  background: var(--navy); color: #fff; font-size: 11px; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .6px; padding: 7px 12px;
-  border-radius: 3px 3px 0 0; display: flex; align-items: center; gap: 10px;
+.main { max-width: 1080px; margin: 0 auto; padding: 16px 12px 0; }
+.section {
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+  margin-bottom: 14px; box-shadow: var(--shadow-sm); overflow: hidden;
 }
-.sec-hdr .hdr-note { margin-left: auto; font-size: 9.5px; font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .75; }
-.sec-body { padding: 12px; }
+.sec-hdr {
+  background: var(--accent); color: var(--accent-fg); font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .8px; padding: 9px 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.sec-hdr .hdr-note {
+  margin-left: auto; font-size: 9.5px; font-weight: 500; text-transform: none;
+  letter-spacing: .2px; opacity: .8; font-variant-numeric: tabular-nums;
+}
+.sec-body { padding: 14px; }
 
-.fg { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.fg { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 /* Outcome row: the vector picker and the notes box both need real width. Two explicit tracks
    can't wrap like the auto-fit base rule does, so below the breakpoint they stack instead of
    halving a phone screen between them. */
 .fg-outcome { grid-template-columns: minmax(200px, 1fr) minmax(200px, 2fr); }
-.field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--navy); }
-.hint { font-size: 9.5px; color: var(--text-soft); font-style: italic; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--accent-text); }
+.hint { font-size: 9.5px; color: var(--text-soft); font-style: italic; line-height: 1.35; }
 input[type=text], input[type=number], input[type=email], select, textarea {
   font-family: inherit; font-size: 16px; /* 16px stops iOS zooming the page on focus */
-  padding: 6px 7px; border: 1px solid var(--border); border-radius: 3px;
+  padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 6px;
   background: var(--input-bg); color: var(--text); width: 100%; min-width: 0;
+  transition: border-color .14s ease, background .14s ease, box-shadow .14s ease;
 }
-input:focus, select:focus, textarea:focus { outline: 2px solid var(--navy-mid); outline-offset: -1px; background: #fff; }
-textarea { min-height: 62px; resize: vertical; line-height: 1.4; }
+input:hover, select:hover, textarea:hover { border-color: var(--accent-edge); }
+input:focus, select:focus, textarea:focus {
+  outline: none; background: var(--input-focus); border-color: var(--accent-text);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
 
 /* ------------------------------------------------- position toggle (sticky) */
 /* Sticks under the app bar because on a phone it is the control reached most often: every
    vector is measured twice and the toggle is what says which half you are filling in. */
 .pos-bar {
-  position: sticky; top: 46px; z-index: 30;
-  background: var(--navy-lt); border: 1px solid var(--navy-mid); border-radius: 4px;
-  padding: 8px 10px; margin-bottom: 14px;
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  box-shadow: 0 2px 6px rgba(0,0,0,.09);
+  position: sticky; top: 47px; z-index: 30;
+  background: var(--accent-soft); border: 1px solid var(--accent-edge); border-radius: 10px;
+  padding: 9px 12px; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  box-shadow: var(--shadow-md);
 }
-.pos-bar .pos-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--navy); }
-.pos-switch { display: flex; border: 1px solid var(--navy); border-radius: 4px; overflow: hidden; }
+.pos-bar .pos-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--accent-text); }
+.pos-switch {
+  display: flex; gap: 3px; padding: 3px;
+  background: var(--card); border: 1px solid var(--accent-edge); border-radius: 9px;
+}
 .pos-switch button {
-  font-family: inherit; font-size: 12px; font-weight: 700; padding: 8px 18px;
-  border: none; background: #fff; color: var(--navy); cursor: pointer; min-width: 92px;
+  font-family: inherit; font-size: 12px; font-weight: 700; padding: 7px 20px;
+  border: none; border-radius: 6px; background: transparent; color: var(--text-soft);
+  cursor: pointer; min-width: 92px; transition: background .16s ease, color .16s ease;
 }
-.pos-switch button[aria-pressed="true"] { background: var(--navy); color: #fff; }
-.pos-bar .pos-help { font-size: 9.5px; color: var(--text-soft); margin-left: auto; }
+.pos-switch button:hover { color: var(--accent-text); }
+.pos-switch button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); box-shadow: var(--shadow-sm); }
+.pos-bar .pos-help { font-size: 9.5px; color: var(--text-soft); margin-left: auto; line-height: 1.35; }
 
 /* ---------------------------------------------------------------- vectors */
-.vec-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
-.vec-list { display: flex; flex-direction: column; gap: 8px; }
+.vec-tools { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.vec-list { display: flex; flex-direction: column; gap: 9px; }
 
 .vec {
-  border: 1px solid var(--border); border-radius: 4px; background: #fbfcfd;
-  padding: 8px 9px;
+  border: 1px solid var(--border); border-radius: 9px; background: var(--surface-3);
+  padding: 10px 11px; transition: border-color .16s ease, background .16s ease;
 }
-.vec.is-candidate { border-color: var(--navy-mid); background: #fff; box-shadow: inset 3px 0 0 var(--navy); }
-.vec-top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
-.vec-name { font-size: 13px; font-weight: 700; color: var(--navy); flex: 1; min-width: 0; }
-.vec-name input { font-size: 13px; font-weight: 700; color: var(--navy); padding: 4px 6px; }
-/* Which positions this vector already has data for — so a half-finished vector is visible
+.vec:hover { border-color: var(--border-strong); }
+.vec.is-candidate {
+  border-color: var(--accent-edge); background: var(--card);
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm);
+}
+.vec-top { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+.vec-name { font-size: 13px; font-weight: 700; color: var(--accent-text); flex: 1; min-width: 0; }
+.vec-name input { font-size: 13px; font-weight: 700; color: var(--accent-text); padding: 5px 8px; }
+/* Which positions this vector already has data for - so a half-finished vector is visible
    without flipping the toggle back and forth. */
-.chips { display: flex; gap: 3px; }
+.chips { display: flex; gap: 4px; }
 .chip {
-  font-size: 8.5px; font-weight: 700; letter-spacing: .3px; padding: 2px 5px; border-radius: 2px;
-  border: 1px solid var(--border); background: #fff; color: #bbc2cc;
+  font-size: 8.5px; font-weight: 700; letter-spacing: .4px; padding: 3px 6px; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-faint);
 }
-.chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
-.cand-btn { font-size: 15px; line-height: 1; background: none; border: none; cursor: pointer; color: #c4ccd6; padding: 2px 4px; }
-.cand-btn[aria-pressed="true"] { color: #e0a400; }
-.del-btn { background: none; border: none; color: var(--red); cursor: pointer; font-size: 17px; line-height: 1; padding: 0 4px; }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.cand-btn {
+  font-size: 16px; line-height: 1; background: none; border: none; cursor: pointer;
+  color: var(--star-off); padding: 3px 5px; border-radius: 5px; transition: color .14s ease, background .14s ease;
+}
+.cand-btn:hover { background: var(--accent-soft); }
+.cand-btn[aria-pressed="true"] { color: var(--star); }
+.del-btn {
+  background: none; border: none; color: var(--text-faint); cursor: pointer; font-size: 18px;
+  line-height: 1; padding: 1px 6px; border-radius: 5px; transition: color .14s ease, background .14s ease;
+}
+.del-btn:hover { color: var(--red); background: var(--red-bg); }
 
-.vec-grid { display: grid; gap: 7px; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+.vec-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
 .vec-grid .field.pos-dep input,
 .vec-grid .field.pos-dep select { background: var(--pos-tint); border-color: var(--pos-edge); }
-.vec-grid .field.pos-dep .lbl { color: #8a5a12; }
+.vec-grid .field.pos-dep .lbl { color: var(--pos-text); }
 .vec-grid .field.hidden { display: none; }
 
-.empty { padding: 18px 12px; text-align: center; color: var(--text-soft); font-size: 11.5px; font-style: italic; }
+.empty { padding: 20px 12px; text-align: center; color: var(--text-soft); font-size: 11.5px; font-style: italic; }
 
 /* ---------------------------------------------------------------- summary */
-table.cmp { width: 100%; border-collapse: collapse; font-size: 11px; }
-table.cmp th, table.cmp td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; white-space: nowrap; }
-table.cmp th { background: var(--navy-lt); color: var(--navy); font-size: 9px; text-transform: uppercase; letter-spacing: .4px; }
-table.cmp tr.is-final td { background: #f0f7ee; font-weight: 700; }
+table.cmp { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 11px; }
+table.cmp th, table.cmp td {
+  border-bottom: 1px solid var(--border); padding: 7px 9px; text-align: left; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+table.cmp th {
+  background: var(--accent-soft); color: var(--accent-text); font-size: 9px;
+  text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--accent-edge);
+}
+table.cmp tr:last-child td { border-bottom: none; }
+table.cmp tbody tr:hover td { background: var(--surface-2); }
+table.cmp tr.is-final td { background: var(--final-bg); font-weight: 700; }
 table.cmp td.pns-yes { color: var(--red); font-weight: 700; }
-.cmp-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.cmp-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: 8px; }
 
 /* ---------------------------------------------------------------- output */
-.out-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.out-actions { display: flex; gap: 7px; flex-wrap: wrap; margin-bottom: 12px; }
 pre.out {
-  background: #f7f9fb; border: 1px solid var(--border); border-radius: 3px;
-  padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
-  line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; line-height: 1.55; color: var(--text);
+  white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
 }
 .toast {
-  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-  background: var(--navy); color: #fff; font-size: 12px; font-weight: 700;
-  padding: 10px 16px; border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: var(--accent); color: var(--accent-fg); font-size: 12px; font-weight: 700;
+  padding: 11px 18px; border-radius: 9px; box-shadow: var(--shadow-md);
   z-index: 100; max-width: 88vw; text-align: center;
 }
 .toast[hidden] { display: none; }
@@ -172,27 +244,56 @@ pre.out {
   .fg-outcome { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
-  .main { padding: 10px 8px 0; }
-  .pos-switch button { min-width: 0; flex: 1; padding: 9px 10px; }
+  .main { padding: 12px 9px 0; }
   .pos-switch { flex: 1 1 100%; }
+  .pos-switch button { min-width: 0; flex: 1; padding: 9px 10px; }
   .pos-bar .pos-help { margin-left: 0; flex: 1 1 100%; }
   .vec-grid { grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); }
-  .bar-actions .btn { padding: 6px 8px; letter-spacing: 0; }
+  .bar-actions .btn { padding: 6px 9px; letter-spacing: .2px; }
 }
 
+/* Print always renders light on white, whatever the screen theme is set to. */
 @media print {
+  :root, :root[data-theme="dark"] {
+    color-scheme: light;
+    --bg:#fff; --card:#fff; --surface-2:#fff; --surface-3:#fff;
+    --text:#000; --text-soft:#333; --text-faint:#666;
+    --border:#bbb; --border-strong:#999;
+    --accent:#1e3a5f; --accent-fg:#fff; --accent-text:#1e3a5f;
+    --accent-soft:#eef3f8; --accent-edge:#c3d4e6;
+    --pos-tint:#fff; --final-bg:#f0f0f0;
+  }
   .app-bar, .pos-bar, .vec-tools, .out-actions, .cand-btn, .del-btn, .btn, .toast { display: none !important; }
-  body { background: #fff; }
   .section { box-shadow: none; page-break-inside: avoid; }
 }
 </style>
+<script>
+/* Resolve the theme before first paint: a dark-mode user should never see a white flash.
+   An explicit choice wins; otherwise follow the OS. Kept tiny and inline for that reason. */
+(function () {
+  try {
+    var t = localStorage.getItem("lv-lead-test-theme");
+    if (t !== "light" && t !== "dark") {
+      t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {}
+})();
+</script>
 </head>
 <body>
 
 <header class="app-bar">
-  <span class="brand">LV Lead Testing <a href="./" title="Developer Deck">· deck</a></span>
-  <span id="save-status" class="save-status"></span>
+  <a class="icon-btn" href="./" title="Developer Deck" aria-label="Back to the Developer Deck">
+    <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor"
+         stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+  </a>
+  <div class="titles">
+    <span class="brand">LV Lead Testing</span>
+    <span id="save-status" class="save-status"></span>
+  </div>
   <div class="bar-actions">
+    <button type="button" class="icon-btn" id="theme-btn" onclick="toggleTheme()"></button>
     <button type="button" class="btn" onclick="jumpToReport()">Report</button>
     <button type="button" class="btn btn-danger" onclick="newSession()">New</button>
   </div>
@@ -739,6 +840,62 @@ function jumpToReport() {
   document.getElementById("s-report").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+/* =================================================================== THEME
+
+   The <head> script already resolved and applied the theme before first paint; this half
+   owns the toggle and the icon. An explicit choice is remembered per device and outranks
+   the OS, which is why the matchMedia listener below only acts when nothing is stored. */
+
+var THEME_KEY = "lv-lead-test-theme";
+
+var ICON_MOON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
+  + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>';
+var ICON_SUN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"'
+  + ' stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22'
+  + 'M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6"/></svg>';
+
+function activeTheme() {
+  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+}
+
+function applyTheme(t) {
+  var root = document.documentElement;
+  root.classList.add("theme-switching");
+  root.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+  updateThemeIcon();
+  setTimeout(function () { root.classList.remove("theme-switching"); }, 0);
+}
+
+/* The button shows the theme you would GET by pressing it, not the one you are in. */
+function updateThemeIcon() {
+  var btn = document.getElementById("theme-btn");
+  if (!btn) return;
+  var dark = activeTheme() === "dark";
+  btn.innerHTML = dark ? ICON_SUN : ICON_MOON;
+  btn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+  btn.setAttribute("aria-label", btn.title);
+}
+
+function toggleTheme() {
+  var next = activeTheme() === "dark" ? "light" : "dark";
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  applyTheme(next);
+}
+
+/* Follow the OS only while the user has not picked a side themselves. */
+if (window.matchMedia) {
+  var mq = matchMedia("(prefers-color-scheme: dark)");
+  var onSchemeChange = function (e) {
+    var stored = null;
+    try { stored = localStorage.getItem(THEME_KEY); } catch (err) {}
+    if (stored !== "light" && stored !== "dark") applyTheme(e.matches ? "dark" : "light");
+  };
+  if (mq.addEventListener) mq.addEventListener("change", onSchemeChange);
+  else if (mq.addListener) mq.addListener(onSchemeChange);
+}
+
 /* ================================================================ PERSIST */
 
 function collect() {
@@ -983,6 +1140,7 @@ render();
 loadMailTo();
 setStatus(state.vectors.length ? "Restored draft" : "", "");
 if (shareSupportsFiles()) document.getElementById("share-btn").hidden = false;
+updateThemeIcon();
 
 /* A phone can be locked, backgrounded, or killed mid-visit — flush the pending debounce
    rather than lose the last field typed. */
