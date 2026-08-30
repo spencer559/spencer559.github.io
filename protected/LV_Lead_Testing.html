@@ -252,19 +252,67 @@ pre.out {
   .bar-actions .btn { padding: 6px 9px; letter-spacing: .2px; }
 }
 
-/* Print always renders light on white, whatever the screen theme is set to. */
+/* Small inline controls that sit beside the print buttons. */
+.opt-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-soft); white-space: nowrap;
+}
+.opt input[type=number] { width: 62px; font-size: 13px; padding: 4px 6px; }
+.opt input[type=checkbox] { width: auto; accent-color: var(--accent); }
+.rule-sep { height: 1px; background: var(--border); margin: 14px 0 12px; }
+
+/* ------------------------------------------------------------------ PRINT
+   Paper gets a purpose-built document rather than the form itself. The interactive page is
+   cards, inputs and possibly a dark theme, none of which survive a printer usefully — and the
+   blank worksheet has no on-screen equivalent at all. buildPrintDoc() fills #print-doc on
+   demand and the print stylesheet renders that and nothing else. */
+.print-doc { display: none; }
+
 @media print {
-  :root, :root[data-theme="dark"] {
-    color-scheme: light;
-    --bg:#fff; --card:#fff; --surface-2:#fff; --surface-3:#fff;
-    --text:#000; --text-soft:#333; --text-faint:#666;
-    --border:#bbb; --border-strong:#999;
-    --accent:#1e3a5f; --accent-fg:#fff; --accent-text:#1e3a5f;
-    --accent-soft:#eef3f8; --accent-edge:#c3d4e6;
-    --pos-tint:#fff; --final-bg:#f0f0f0;
+  @page { size: letter landscape; margin: .42in; }
+  html, body { background: #fff !important; padding: 0 !important; }
+  body > *:not(.print-doc) { display: none !important; }
+
+  .print-doc {
+    display: block; color: #000;
+    font-family: Arial, Helvetica, sans-serif; font-size: 8.6pt; line-height: 1.3;
   }
-  .app-bar, .pos-bar, .vec-tools, .out-actions, .cand-btn, .del-btn, .btn, .toast { display: none !important; }
-  .section { box-shadow: none; page-break-inside: avoid; }
+  .pd-head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 9px;
+  }
+  .pd-title { font-size: 15pt; font-weight: 700; letter-spacing: .3px; line-height: 1.1; }
+  .pd-sub { font-size: 8pt; color: #333; }
+
+  .pd-fields { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px 16px; margin-bottom: 11px; }
+  .pf { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .pfl { font-size: 6.8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+  .pfv { flex: 1; min-width: 0; border-bottom: .8px solid #555; min-height: 14px; font-size: 9pt; padding: 0 3px; }
+
+  table.pd-t { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+  .pd-t tr { page-break-inside: avoid; }
+  .pd-t th, .pd-t td { border: .7px solid #444; padding: 3px 4px; }
+  .pd-t th {
+    background: #e9e9e9; font-size: 6.6pt; text-transform: uppercase; letter-spacing: .3px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .pd-t td { font-size: 8.6pt; height: 21px; }
+  .pd-t.blank td { height: 27px; }          /* room to write by hand */
+  .pd-t .c { text-align: center; }
+  .pd-t tr.cand td { font-weight: 700; }
+  .pd-t tr.cand td:first-child { background: #f0f0f0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* A heavier rule where one position block ends and the next begins, so the two halves of
+     the row don't read as one undifferentiated run of eight numbers. */
+  .pd-t .grp { border-left: 1.7px solid #000; }
+
+  .pd-after { margin-top: 10px; page-break-inside: avoid; }
+  .pd-lbl { font-size: 6.8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 2px; }
+  .pd-line { border-bottom: .8px solid #666; height: 16px; }
+  .pd-text { border-bottom: .8px solid #666; min-height: 16px; padding-bottom: 2px; }
+  .pd-sign { display: flex; gap: 26px; margin-top: 12px; }
+  .pd-sign .pf { flex: 1; }
 }
 </style>
 <script>
@@ -399,6 +447,25 @@ pre.out {
         <button type="button" class="btn btn-primary" id="share-btn" hidden onclick="shareCapture()">Share / attach</button>
         <button type="button" class="btn" onclick="emailReport()">Email</button>
       </div>
+
+      <div class="rule-sep"></div>
+
+      <div class="out-actions">
+        <button type="button" class="btn btn-primary" onclick="printReport()">Print / PDF</button>
+        <button type="button" class="btn" onclick="printBlank()">Blank worksheet</button>
+      </div>
+      <div class="opt-row">
+        <label class="opt">Worksheet rows
+          <input type="number" id="blank-rows" value="16" min="1" max="40">
+        </label>
+        <label class="opt">
+          <input type="checkbox" id="blank-use-list" checked> Label rows from current lead
+        </label>
+      </div>
+      <p class="hint" style="margin-bottom:12px">
+        Print / PDF renders the capture above. Blank worksheet prints an empty version of the same
+        table for hand-recording — choose “Save as PDF” in the print dialog to get a file.
+      </p>
       <pre class="out" id="out">Press “Text report” or “JSON”.</pre>
     </div>
   </section>
@@ -406,6 +473,9 @@ pre.out {
 </main>
 
 <div class="toast" id="toast" hidden></div>
+
+<!-- Filled on demand by buildPrintDoc(); the only thing the print stylesheet renders. -->
+<div class="print-doc" id="print-doc" aria-hidden="true"></div>
 
 <script>
 "use strict";
@@ -1125,6 +1195,130 @@ function emailReport() {
   window.location.href = "mailto:" + encodeURIComponent(to)
     + "?subject=" + encodeURIComponent(subject) + "&body=" + encoded;
 }
+
+/* =================================================================== PRINT
+
+   One layout serves both outputs. The filled report and the blank worksheet share the same
+   column structure deliberately: a tech who hand-records on the worksheet is filling in the
+   exact grid the tool would have produced, so the two are transcribable one-to-one and read
+   the same way in a chart. Only the cell contents and row height differ.
+
+   Output is via window.print() rather than a PDF library: it needs no vendored dependency,
+   keeps the text selectable, honours the printer's paper size, and "Save as PDF" in the
+   dialog produces the file — including on iPad, where it lands in the share sheet. */
+
+function pfield(label, value) {
+  return '<div class="pf"><span class="pfl">' + esc(label) + '</span>'
+       + '<span class="pfv">' + (value ? esc(value) : '') + '</span></div>';
+}
+
+function printTable(rows, blank) {
+  var head = '<tr><th rowspan="2" class="c">&#9733;</th><th rowspan="2">Vector</th>'
+           + '<th rowspan="2" class="c">Z (&#937;)</th>';
+  POSITIONS.forEach(function (p) {
+    head += '<th colspan="4" class="c grp">' + POS_LABEL[p].toUpperCase() + '</th>';
+  });
+  head += '<th rowspan="2" class="c grp">Paced QRS (ms)</th></tr><tr>';
+  POSITIONS.forEach(function () {
+    head += '<th class="c grp">Thr (V)</th><th class="c">PW (ms)</th>'
+          + '<th class="c">PNS Y/N</th><th class="c">PNS @ (V)</th>';
+  });
+  head += '</tr>';
+
+  var body = rows.map(function (v) {
+    if (blank) {
+      return '<tr><td class="c"></td><td>' + esc(v.label || '') + '</td><td></td>'
+        + POSITIONS.map(function () {
+            return '<td class="grp"></td><td></td><td></td><td></td>';
+          }).join('')
+        + '<td class="grp"></td></tr>';
+    }
+    var cells = POSITIONS.map(function (p) {
+      var d = v.byPosition[p];
+      return '<td class="c grp">' + esc(d.threshold) + '</td><td class="c">' + esc(d.pw) + '</td>'
+           + '<td class="c">' + esc(d.phrenic) + '</td><td class="c">' + esc(d.phrenicV) + '</td>';
+    }).join('');
+    return '<tr' + (v.candidate ? ' class="cand"' : '') + '>'
+      + '<td class="c">' + (v.candidate ? '&#9733;' : '') + '</td>'
+      + '<td>' + esc(vectorLabel(v)) + '</td>'
+      + '<td class="c">' + esc(v.impedance) + '</td>'
+      + cells
+      + '<td class="c grp">' + esc(v.qrs) + '</td></tr>';
+  }).join('');
+
+  return '<table class="pd-t' + (blank ? ' blank' : '') + '"><thead>' + head
+       + '</thead><tbody>' + body + '</tbody></table>';
+}
+
+/* The Rows box is a MINIMUM, not a cap: labelling from the current lead always prints every
+   vector in the list, then pads with empty rows up to the requested count so there is room
+   to add ones the preset didn't cover. */
+function blankRows() {
+  var n = parseInt(document.getElementById('blank-rows').value, 10);
+  if (!isFinite(n) || n < 1) n = 16;
+  n = Math.min(n, 40);
+  var useList = document.getElementById('blank-use-list').checked;
+  var labels = useList ? state.vectors.map(vectorLabel) : [];
+  var out = [], i;
+  for (i = 0; i < Math.max(n, labels.length); i++) out.push({ label: labels[i] || '' });
+  return out;
+}
+
+function buildPrintDoc(mode) {
+  var blank = mode === 'blank';
+  var s = collect();
+  var useList = blank && document.getElementById('blank-use-list').checked && state.vectors.length;
+
+  var html = '<div class="pd-head"><div>'
+    + '<div class="pd-title">LV Lead Testing</div>'
+    + '<div class="pd-sub">'
+    + (blank ? 'Vector testing worksheet &nbsp;·&nbsp; &#9733; marks a candidate vector'
+             : esc(s.captureId)) + '</div>'
+    + '</div><div class="pd-sub">'
+    + (blank ? '' : esc(new Date(s.createdAt).toLocaleString())) + '</div></div>';
+
+  /* The worksheet is paper that lives in a chart, so it carries the identifier line the
+     digital capture deliberately refuses to hold. The filled report has no such line — its
+     data came from a capture that never had one. */
+  html += '<div class="pd-fields">';
+  if (blank) html += pfield('Patient / ID', '');
+  html += pfield('Date', blank ? '' : new Date(s.createdAt).toLocaleDateString());
+  html += pfield('Lead model', blank ? '' : s.leadModel);
+  html += pfield('Lead type', blank ? (useList ? presetLabel(s.preset) : '') : presetLabel(s.preset));
+  html += pfield('Generator', blank ? '' : s.generator);
+  html += pfield('Tag / Room', blank ? '' : s.tag);
+  if (blank) html += pfield('Recorded by', '');
+  html += '</div>';
+
+  html += printTable(blank ? blankRows() : state.vectors, blank);
+
+  var fin = state.vectors.filter(function (v) { return v.id === s.finalVectorId; })[0];
+  html += '<div class="pd-after">'
+        + '<div class="pd-lbl">Selected vector</div>'
+        + '<div class="pd-line">' + (blank ? '' : esc(fin ? vectorLabel(fin) : '')) + '</div>'
+        + '<div class="pd-lbl" style="margin-top:9px">Notes</div>';
+  if (blank) {
+    html += '<div class="pd-line"></div><div class="pd-line"></div><div class="pd-line"></div>';
+  } else {
+    html += '<div class="pd-text">' + esc(s.notes).replace(/\n/g, '<br>') + '</div>';
+  }
+  html += '</div>';
+
+  if (blank) {
+    html += '<div class="pd-sign">' + pfield('Signature', '') + pfield('Date / Time', '') + '</div>';
+  }
+  return html;
+}
+
+function renderPrint(mode) {
+  document.getElementById('print-doc').innerHTML = buildPrintDoc(mode);
+  window.print();
+}
+function printReport() {
+  if (!state.vectors.length) { toast('Nothing to print yet'); return; }
+  renderPrint('report');
+}
+function printBlank() { renderPrint('blank'); }
 
 var toastTimer = null;
 function toast(msg) {
