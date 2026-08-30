@@ -28,6 +28,7 @@
   --green:#2d7d46; --amber:#b46a00; --red:#b03030; --red-edge:#e2c0c0; --red-bg:#fdf3f3;
   --pos-tint:#fff7ea; --pos-edge:#e7c69b; --pos-text:#8a5a12;
   --star:#dfa300; --star-off:#c2cad5; --final-bg:#eef7ee;
+  --green-fg:#ffffff; --status-none:#c7d1dd;
   --shadow-sm:0 1px 2px rgba(16,28,44,.05), 0 1px 3px rgba(16,28,44,.07);
   --shadow-md:0 3px 10px rgba(16,28,44,.10);
   --shadow-bar:0 1px 0 rgba(16,28,44,.05), 0 2px 10px rgba(16,28,44,.06);
@@ -43,6 +44,7 @@
   --green:#5cbd7a; --amber:#d99a3c; --red:#ef8888; --red-edge:#5a3232; --red-bg:#2a1a1a;
   --pos-tint:#2a2314; --pos-edge:#5d4b25; --pos-text:#d9b476;
   --star:#f0b429; --star-off:#47546a; --final-bg:#17281d;
+  --green-fg:#0e1218; --status-none:#3a4658;
   --shadow-sm:0 1px 2px rgba(0,0,0,.45);
   --shadow-md:0 3px 12px rgba(0,0,0,.5);
   --shadow-bar:0 1px 0 rgba(0,0,0,.5), 0 2px 12px rgba(0,0,0,.35);
@@ -166,6 +168,17 @@ textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
 
 /* ---------------------------------------------------------------- vectors */
 .vec-tools { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.seg { display: flex; gap: 2px; padding: 2px; background: var(--surface-2);
+       border: 1px solid var(--border-strong); border-radius: 7px; margin-left: auto; }
+.seg button {
+  font-family: inherit; font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .3px; padding: 5px 11px; border: none; border-radius: 5px;
+  background: transparent; color: var(--text-soft); cursor: pointer;
+  transition: background .14s ease, color .14s ease;
+}
+.seg button:hover { color: var(--accent-text); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+@media (max-width: 520px) { .seg { margin-left: 0; flex: 1 1 100%; } .seg button { flex: 1; } }
 .vec-list { display: flex; flex-direction: column; gap: 9px; }
 
 .vec {
@@ -173,10 +186,15 @@ textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
   padding: 10px 11px; transition: border-color .16s ease, background .16s ease;
 }
 .vec:hover { border-color: var(--border-strong); }
-.vec.is-candidate {
-  border-color: var(--accent-edge); background: var(--card);
-  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-sm);
-}
+/* The left stripe is the at-a-glance answer to "have I done this one yet" — grey untouched,
+   amber started, green complete in both positions. It is the whole point of being able to
+   run down a 16-vector list without re-reading every cell. */
+.vec[data-status="none"]    { box-shadow: inset 3px 0 0 var(--status-none); }
+.vec[data-status="partial"] { box-shadow: inset 3px 0 0 var(--amber); }
+.vec[data-status="done"]    { box-shadow: inset 3px 0 0 var(--green); background: var(--card); }
+.vec.is-candidate { border-color: var(--accent-edge); background: var(--card); }
+.vec[data-status="done"].is-candidate { box-shadow: inset 3px 0 0 var(--green), var(--shadow-sm); }
+.vec.is-hidden { display: none; }
 .vec-top { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
 .vec-name { font-size: 13px; font-weight: 700; color: var(--accent-text); flex: 1; min-width: 0; }
 .vec-name input { font-size: 13px; font-weight: 700; color: var(--accent-text); padding: 5px 8px; }
@@ -187,7 +205,8 @@ textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
   font-size: 8.5px; font-weight: 700; letter-spacing: .4px; padding: 3px 6px; border-radius: 4px;
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-faint);
 }
-.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.chip.partial { border-color: var(--amber); color: var(--amber); background: transparent; }
+.chip.on { background: var(--green); border-color: var(--green); color: var(--green-fg); }
 .cand-btn {
   font-size: 16px; line-height: 1; background: none; border: none; cursor: pointer;
   color: var(--star-off); padding: 3px 5px; border-radius: 5px; transition: color .14s ease, background .14s ease;
@@ -201,9 +220,12 @@ textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
 .del-btn:hover { color: var(--red); background: var(--red-bg); }
 
 .vec-grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
-.vec-grid .field.pos-dep input,
-.vec-grid .field.pos-dep select { background: var(--pos-tint); border-color: var(--pos-edge); }
-.vec-grid .field.pos-dep .lbl { color: var(--pos-text); }
+/* The amber tint marks a field that still WANTS a value. It used to mark every
+   position-dependent field permanently, which meant it was lit on finished work too and so
+   said nothing about what was left to do. Cleared the moment something is typed. */
+.vec-grid .field.pos-dep.is-empty input,
+.vec-grid .field.pos-dep.is-empty select { background: var(--pos-tint); border-color: var(--pos-edge); }
+.vec-grid .field.pos-dep.is-empty .lbl { color: var(--pos-text); }
 .vec-grid .field.hidden { display: none; }
 
 .empty { padding: 20px 12px; text-align: center; color: var(--text-soft); font-size: 11.5px; font-style: italic; }
@@ -395,6 +417,11 @@ pre.out {
         <button type="button" class="btn" onclick="addVector()">+ Add vector</button>
         <button type="button" class="btn" onclick="clearMeasurements()">Clear measurements</button>
         <button type="button" class="btn btn-danger" onclick="removeAllVectors()">Remove all</button>
+        <div class="seg" role="group" aria-label="Filter vectors">
+          <button type="button" id="flt-all" aria-pressed="true" onclick="setFilter('all')">All</button>
+          <button type="button" id="flt-untested" aria-pressed="false" onclick="setFilter('untested')">To do</button>
+          <button type="button" id="flt-done" aria-pressed="false" onclick="setFilter('done')">Done</button>
+        </div>
       </div>
       <div class="vec-list" id="vec-list"></div>
       <div class="empty" id="vec-empty" hidden>No vectors yet — pick a lead above, or add them one at a time.</div>
@@ -565,6 +592,7 @@ var MAILTO_BODY_LIMIT = 1800;               // practical ceiling before clients 
 
 var state = blankState();
 var position = "sitting";
+var vecFilter = "all";
 var outMode = null;
 var seq = 0;
 
@@ -616,6 +644,22 @@ function hasAnyData(v) {
   return !!(v.impedance || v.qrs) || POSITIONS.some(function (p) { return positionFilled(v, p); });
 }
 
+/* A position counts as TESTED once it has both a threshold and an explicit phrenic answer.
+   Pulse width is tinted when empty like the others, but is deliberately not required here:
+   a threshold recorded at the lab's standard PW is still a tested vector, and demanding it
+   would leave rows stuck on amber forever for anyone who doesn't retype 0.5 sixteen times. */
+function positionComplete(v, p) {
+  var d = v.byPosition[p] || {};
+  return !!(d.threshold && d.phrenic);
+}
+
+function vectorStatus(v) {
+  var done = POSITIONS.filter(function (p) { return positionComplete(v, p); }).length;
+  if (done === POSITIONS.length) return "done";
+  if (done > 0 || hasAnyData(v)) return "partial";
+  return "none";
+}
+
 /* ================================================================ RENDER */
 
 function render() {
@@ -656,13 +700,42 @@ function renderVectors() {
   list.textContent = "";
   state.vectors.forEach(function (v) { list.appendChild(vectorNode(v)); });
   document.getElementById("vec-empty").hidden = state.vectors.length > 0;
-  document.getElementById("vec-count").textContent =
-    state.vectors.length ? state.vectors.length + " vectors · " + POS_LABEL[position] : "";
+  applyFilter();
+  refreshStatus();
+}
+
+/* Filtering hides rows rather than dropping them, and is only re-applied when the filter or
+   the vector list changes — never on keystroke. A row vanishing from under the cursor the
+   instant it became complete would be a hostile way to fill in the last field. */
+function applyFilter() {
+  var rows = document.getElementById("vec-list").children, i, v, st, show;
+  for (i = 0; i < rows.length; i++) {
+    v = vectorById(rows[i].dataset.vid);
+    if (!v) continue;
+    st = vectorStatus(v);
+    show = vecFilter === "all" || (vecFilter === "done" ? st === "done" : st !== "done");
+    rows[i].classList.toggle("is-hidden", !show);
+  }
+}
+
+function setFilter(f) {
+  vecFilter = f;
+  ["all", "untested", "done"].forEach(function (k) {
+    document.getElementById("flt-" + k).setAttribute("aria-pressed", k === f ? "true" : "false");
+  });
+  applyFilter();
+  refreshStatus();
+}
+
+function vectorById(id) {
+  return state.vectors.filter(function (v) { return v.id === id; })[0];
 }
 
 function vectorNode(v) {
   var d = v.byPosition[position];
   var wrap = el("div", "vec" + (v.candidate ? " is-candidate" : ""));
+  wrap.dataset.vid = v.id;
+  wrap.setAttribute("data-status", vectorStatus(v));
 
   /* --- header: name, position chips, candidate star, delete --- */
   var top = el("div", "vec-top");
@@ -710,20 +783,14 @@ function vectorNode(v) {
 
   /* --- measurements: tinted fields swap with the position toggle --- */
   var grid = el("div", "vec-grid");
-  grid.appendChild(field("Thr (V)", numInput(d.threshold, "1.0", function (val) {
-    d.threshold = val; markDirty(); renderChips(); renderCompare();
-  }), true));
-  grid.appendChild(field("PW (ms)", numInput(d.pw, "0.5", function (val) {
-    d.pw = val; markDirty(); renderChips(); renderCompare();
-  }), true));
-  grid.appendChild(field("PNS", selectInput(d.phrenic, ["", "No", "Yes"], function (val) {
+  grid.appendChild(posField("Thr (V)", d.threshold, "1.0", function (val) { d.threshold = val; }));
+  grid.appendChild(posField("PW (ms)", d.pw, "0.5", function (val) { d.pw = val; }));
+  grid.appendChild(posSelect("PNS", d.phrenic, function (val) {
     d.phrenic = val; markDirty(); renderVectors(); renderCompare();
-  }), true));
+  }));
 
   /* Voltage at which stim appears only means something once stim is present. */
-  var pnsV = field("PNS at (V)", numInput(d.phrenicV, "4.0", function (val) {
-    d.phrenicV = val; markDirty(); renderChips(); renderCompare();
-  }), true);
+  var pnsV = posField("PNS at (V)", d.phrenicV, "4.0", function (val) { d.phrenicV = val; });
   if (d.phrenic !== "Yes") pnsV.className += " hidden";
   grid.appendChild(pnsV);
 
@@ -742,17 +809,49 @@ function vectorNode(v) {
   return wrap;
 }
 
-/* Repaint only the position chips. Typing a threshold shouldn't rebuild the row the user is
-   still inside — that would drop focus on every keystroke. */
-function renderChips() {
-  var rows = document.getElementById("vec-list").children;
-  state.vectors.forEach(function (v, i) {
-    var row = rows[i]; if (!row) return;
-    var chips = row.querySelectorAll(".chip");
+/* Repaint the status furniture only — chips, stripe, progress count. Typing a threshold must
+   not rebuild the row the user is still inside; that would drop focus on every keystroke.
+   Rows are matched by vector id, not list position, so this stays correct while filtered. */
+function refreshStatus() {
+  var rows = document.getElementById("vec-list").children, i, row, v, chips;
+  for (i = 0; i < rows.length; i++) {
+    row = rows[i];
+    v = vectorById(row.dataset.vid);
+    if (!v) continue;
+    row.setAttribute("data-status", vectorStatus(v));
+    chips = row.querySelectorAll(".chip");
     POSITIONS.forEach(function (p, j) {
-      if (chips[j]) chips[j].className = "chip" + (positionFilled(v, p) ? " on" : "");
+      if (!chips[j]) return;
+      chips[j].className = "chip" + (positionComplete(v, p) ? " on"
+                                   : positionFilled(v, p) ? " partial" : "");
     });
+  }
+  var total = state.vectors.length;
+  var done = state.vectors.filter(function (x) { return vectorStatus(x) === "done"; }).length;
+  document.getElementById("vec-count").textContent =
+    total ? done + " / " + total + " tested · " + POS_LABEL[position] : "";
+}
+
+/* Position-dependent inputs own their own tint: it has to clear on keystroke, and a full
+   re-render would take the focus with it. */
+function posField(label, value, ph, onchange) {
+  var wrap;
+  var input = numInput(value, ph, function (val) {
+    onchange(val);
+    wrap.classList.toggle("is-empty", !val);
+    markDirty(); refreshStatus(); renderCompare();
   });
+  wrap = field(label, input, true);
+  wrap.classList.toggle("is-empty", !value);
+  return wrap;
+}
+
+function posSelect(label, value, onchange) {
+  var wrap;
+  var input = selectInput(value, ["", "No", "Yes"], function (val) { onchange(val); });
+  wrap = field(label, input, true);
+  wrap.classList.toggle("is-empty", !value);
+  return wrap;
 }
 
 function renderFinalOptions() {
