@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- Content-Security-Policy: this page shares an origin with the CRM tool. It is designed to
+     hold NO patient identifiers, but it still ships the same egress lockdown as its neighbours:
+     connect-src 'none' blocks every fetch/XHR/beacon/WebSocket, so nothing here can be shipped
+     anywhere except by the user deliberately copying, downloading, or mailing it. mailto: is a
+     top-level navigation handed to the OS mail client, which CSP does not govern — that is the
+     one intended exit, and it only ever carries what the user pressed a button to send. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>LV Lead Testing — Capture</title>
+
+<style>
+:root {
+  --navy: #1e3a5f;
+  --navy-lt: #e6eef6;
+  --navy-mid: #c8d8e8;
+  --bg: #d0d6df;
+  --card: #fff;
+  --text: #111;
+  --text-soft: #556;
+  --border: #cdd5df;
+  --input-bg: #f7f9fb;
+  --green: #2d7d46;
+  --amber: #c87000;
+  --red: #b03030;
+  /* Position-dependent fields are tinted so it is obvious at a glance which values the
+     Supine/Sitting toggle swaps out and which ones are shared across both. */
+  --pos-tint: #fff6e8;
+  --pos-edge: #e8c79a;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 13px; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: var(--text);
+  line-height: 1.4; padding-bottom: 60px;
+}
+
+/* ---------------------------------------------------------------- app bar */
+.app-bar {
+  position: sticky; top: 0; z-index: 40;
+  background: #fff; border-bottom: 1px solid var(--border);
+  padding: 0 12px; min-height: 46px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 1px 5px rgba(0,0,0,.1);
+}
+.brand { font-size: 13px; font-weight: 700; color: var(--navy); letter-spacing: .2px; white-space: nowrap; }
+.brand a { color: inherit; text-decoration: none; opacity: .55; font-weight: 400; }
+.brand a:hover { opacity: 1; }
+.save-status { font-size: 10px; color: #999; white-space: nowrap; }
+.save-status.saved { color: var(--green); }
+.save-status.dirty { color: var(--amber); }
+.bar-actions { margin-left: auto; display: flex; gap: 6px; }
+
+.btn {
+  padding: 6px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .3px; border-radius: 3px; border: 1px solid var(--border);
+  cursor: pointer; font-family: inherit; background: #f3f5f8; color: var(--text-soft);
+  transition: background .1s, color .1s;
+}
+.btn:hover { background: #e5e9ef; }
+.btn-primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+.btn-primary:hover { background: #162e4d; }
+.btn-danger { background: #fff; color: var(--red); border-color: #dbb; }
+.btn-danger:hover { background: #fdf0f0; }
+.btn:disabled { background: #eef1f5; color: #aab; border-color: var(--border); cursor: default; }
+
+/* ---------------------------------------------------------------- layout */
+.main { max-width: 1080px; margin: 0 auto; padding: 14px 10px 0; }
+.section { background: var(--card); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+.sec-hdr {
+  background: var(--navy); color: #fff; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .6px; padding: 7px 12px;
+  border-radius: 3px 3px 0 0; display: flex; align-items: center; gap: 10px;
+}
+.sec-hdr .hdr-note { margin-left: auto; font-size: 9.5px; font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .75; }
+.sec-body { padding: 12px; }
+
+.fg { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--navy); }
+.hint { font-size: 9.5px; color: var(--text-soft); font-style: italic; }
+input[type=text], input[type=number], input[type=email], select, textarea {
+  font-family: inherit; font-size: 16px; /* 16px stops iOS zooming the page on focus */
+  padding: 6px 7px; border: 1px solid var(--border); border-radius: 3px;
+  background: var(--input-bg); color: var(--text); width: 100%; min-width: 0;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--navy-mid); outline-offset: -1px; background: #fff; }
+textarea { min-height: 62px; resize: vertical; line-height: 1.4; }
+
+/* ------------------------------------------------- position toggle (sticky) */
+/* Sticks under the app bar because on a phone it is the control reached most often: every
+   vector is measured twice and the toggle is what says which half you are filling in. */
+.pos-bar {
+  position: sticky; top: 46px; z-index: 30;
+  background: var(--navy-lt); border: 1px solid var(--navy-mid); border-radius: 4px;
+  padding: 8px 10px; margin-bottom: 14px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,.09);
+}
+.pos-bar .pos-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--navy); }
+.pos-switch { display: flex; border: 1px solid var(--navy); border-radius: 4px; overflow: hidden; }
+.pos-switch button {
+  font-family: inherit; font-size: 12px; font-weight: 700; padding: 8px 18px;
+  border: none; background: #fff; color: var(--navy); cursor: pointer; min-width: 92px;
+}
+.pos-switch button[aria-pressed="true"] { background: var(--navy); color: #fff; }
+.pos-bar .pos-help { font-size: 9.5px; color: var(--text-soft); margin-left: auto; }
+
+/* ---------------------------------------------------------------- vectors */
+.vec-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.vec-list { display: flex; flex-direction: column; gap: 8px; }
+
+.vec {
+  border: 1px solid var(--border); border-radius: 4px; background: #fbfcfd;
+  padding: 8px 9px;
+}
+.vec.is-candidate { border-color: var(--navy-mid); background: #fff; box-shadow: inset 3px 0 0 var(--navy); }
+.vec-top { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.vec-name { font-size: 13px; font-weight: 700; color: var(--navy); flex: 1; min-width: 0; }
+.vec-name input { font-size: 13px; font-weight: 700; color: var(--navy); padding: 4px 6px; }
+/* Which positions this vector already has data for — so a half-finished vector is visible
+   without flipping the toggle back and forth. */
+.chips { display: flex; gap: 3px; }
+.chip {
+  font-size: 8.5px; font-weight: 700; letter-spacing: .3px; padding: 2px 5px; border-radius: 2px;
+  border: 1px solid var(--border); background: #fff; color: #bbc2cc;
+}
+.chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.cand-btn { font-size: 15px; line-height: 1; background: none; border: none; cursor: pointer; color: #c4ccd6; padding: 2px 4px; }
+.cand-btn[aria-pressed="true"] { color: #e0a400; }
+.del-btn { background: none; border: none; color: var(--red); cursor: pointer; font-size: 17px; line-height: 1; padding: 0 4px; }
+
+.vec-grid { display: grid; gap: 7px; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); }
+.vec-grid .field.pos-dep input,
+.vec-grid .field.pos-dep select { background: var(--pos-tint); border-color: var(--pos-edge); }
+.vec-grid .field.pos-dep .lbl { color: #8a5a12; }
+.vec-grid .field.hidden { display: none; }
+
+.empty { padding: 18px 12px; text-align: center; color: var(--text-soft); font-size: 11.5px; font-style: italic; }
+
+/* ---------------------------------------------------------------- summary */
+table.cmp { width: 100%; border-collapse: collapse; font-size: 11px; }
+table.cmp th, table.cmp td { border: 1px solid var(--border); padding: 4px 6px; text-align: left; white-space: nowrap; }
+table.cmp th { background: var(--navy-lt); color: var(--navy); font-size: 9px; text-transform: uppercase; letter-spacing: .4px; }
+table.cmp tr.is-final td { background: #f0f7ee; font-weight: 700; }
+table.cmp td.pns-yes { color: var(--red); font-weight: 700; }
+.cmp-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------------------------------------------------------------- output */
+.out-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+pre.out {
+  background: #f7f9fb; border: 1px solid var(--border); border-radius: 3px;
+  padding: 10px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11px;
+  line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto;
+}
+.toast {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  background: var(--navy); color: #fff; font-size: 12px; font-weight: 700;
+  padding: 10px 16px; border-radius: 4px; box-shadow: 0 4px 14px rgba(0,0,0,.3);
+  z-index: 100; max-width: 88vw; text-align: center;
+}
+.toast[hidden] { display: none; }
+
+@media (max-width: 520px) {
+  .main { padding: 10px 8px 0; }
+  .pos-switch button { min-width: 0; flex: 1; padding: 9px 10px; }
+  .pos-switch { flex: 1 1 100%; }
+  .pos-bar .pos-help { margin-left: 0; flex: 1 1 100%; }
+  .vec-grid { grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); }
+  .bar-actions .btn { padding: 6px 8px; letter-spacing: 0; }
+}
+
+@media print {
+  .app-bar, .pos-bar, .vec-tools, .out-actions, .cand-btn, .del-btn, .btn, .toast { display: none !important; }
+  body { background: #fff; }
+  .section { box-shadow: none; page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+
+<header class="app-bar">
+  <span class="brand">LV Lead Testing <a href="./" title="Developer Deck">· deck</a></span>
+  <span id="save-status" class="save-status"></span>
+  <div class="bar-actions">
+    <button type="button" class="btn" onclick="jumpToReport()">Report</button>
+    <button type="button" class="btn btn-danger" onclick="newSession()">New</button>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- ============================================================ SESSION -->
+  <section class="section">
+    <div class="sec-hdr">Session
+      <span class="hdr-note" id="capture-id-note"></span>
+    </div>
+    <div class="sec-body">
+      <div class="fg">
+        <div class="field">
+          <span class="lbl">Manufacturer / Lead</span>
+          <select id="lead-preset" onchange="onPresetChange()"></select>
+        </div>
+        <div class="field">
+          <span class="lbl">Lead model (as programmed)</span>
+          <input type="text" id="lead-model" placeholder="e.g. 1458Q" oninput="markDirty()">
+        </div>
+        <div class="field">
+          <span class="lbl">Generator</span>
+          <input type="text" id="generator" placeholder="e.g. Quadra Assura" oninput="markDirty()">
+        </div>
+        <div class="field">
+          <span class="lbl">Tag (non-identifying)</span>
+          <input type="text" id="tag" placeholder="e.g. Rm 3, 2pm" oninput="markDirty()">
+          <span class="hint">No patient identifiers.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================== POSITION -->
+  <div class="pos-bar">
+    <span class="pos-lbl">Position</span>
+    <div class="pos-switch" role="group" aria-label="Patient position">
+      <button type="button" id="pos-sitting" aria-pressed="true"  onclick="setPosition('sitting')">Sitting</button>
+      <button type="button" id="pos-supine"  aria-pressed="false" onclick="setPosition('supine')">Supine</button>
+    </div>
+    <span class="pos-help">Tinted fields belong to the selected position. Impedance and QRS are shared.</span>
+  </div>
+
+  <!-- ============================================================ VECTORS -->
+  <section class="section">
+    <div class="sec-hdr">Vectors <span class="hdr-note" id="vec-count"></span></div>
+    <div class="sec-body">
+      <div class="vec-tools">
+        <button type="button" class="btn" onclick="addVector()">+ Add vector</button>
+        <button type="button" class="btn" onclick="clearMeasurements()">Clear measurements</button>
+        <button type="button" class="btn btn-danger" onclick="removeAllVectors()">Remove all</button>
+      </div>
+      <div class="vec-list" id="vec-list"></div>
+      <div class="empty" id="vec-empty" hidden>No vectors yet — pick a lead above, or add them one at a time.</div>
+    </div>
+  </section>
+
+  <!-- ============================================================ OUTCOME -->
+  <section class="section">
+    <div class="sec-hdr">Outcome</div>
+    <div class="sec-body">
+      <div class="fg" style="grid-template-columns: minmax(200px, 1fr) minmax(200px, 2fr);">
+        <div class="field">
+          <span class="lbl">Final selected vector</span>
+          <select id="final-vector" onchange="markDirty(); renderCompare();"></select>
+          <span class="hint">Starred vectors appear here.</span>
+        </div>
+        <div class="field">
+          <span class="lbl">Notes</span>
+          <textarea id="notes" placeholder="Anything the numbers don't say…" oninput="markDirty()"></textarea>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ COMPARE -->
+  <section class="section">
+    <div class="sec-hdr">Sitting vs Supine</div>
+    <div class="sec-body">
+      <div class="cmp-wrap"><table class="cmp" id="cmp-table"></table></div>
+    </div>
+  </section>
+
+  <!-- ============================================================= REPORT -->
+  <section class="section" id="s-report">
+    <div class="sec-hdr">Report &amp; Export</div>
+    <div class="sec-body">
+      <div class="fg" style="grid-template-columns: minmax(200px,1fr); margin-bottom: 12px;">
+        <div class="field">
+          <span class="lbl">Email to</span>
+          <input type="email" id="mail-to" placeholder="you@example.com" oninput="saveMailTo()">
+          <span class="hint">Stored on this device only — never in the repo, never in the capture.</span>
+        </div>
+      </div>
+      <div class="out-actions">
+        <button type="button" class="btn btn-primary" onclick="showOut('text')">Text report</button>
+        <button type="button" class="btn btn-primary" onclick="showOut('json')">JSON</button>
+        <button type="button" class="btn" onclick="copyOut()">Copy</button>
+        <button type="button" class="btn" onclick="downloadOut()">Download</button>
+        <button type="button" class="btn" onclick="emailReport()">Email</button>
+      </div>
+      <pre class="out" id="out">Press “Text report” or “JSON”.</pre>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+"use strict";
+
+/* =============================================================== LEAD LIBRARY
+
+   What a preset actually determines is ELECTRODE GEOMETRY, not the model name. A pacing
+   vector is one electrode as cathode against another electrode or the RV coil as anode, so
+   every quadripolar lead yields the same 16 pairings and every bipolar lead the same 4 —
+   regardless of vendor, shape, or fixation. The long list below therefore exists so you can
+   pick your lead by name and have it named correctly in the report; it is not 21 different
+   vector sets.
+
+   The one real exception is a vendor RESTRICTING the programmable set below what the
+   geometry allows: Abbott's classic Quartet 10 is listed explicitly for that reason. Where a
+   restricted set is known, give an explicit `vectors` array; otherwise allPairings() covers it.
+
+   These lists are NOT transcribed from the programmers and the model names are from general
+   product knowledge, not a verified catalogue. Check both against the device in front of you.
+   Nothing here auto-fills the lead-model field — that stays yours to type from the programmer,
+   so a wrong model number can never reach a report by default. */
+
+var RV_COIL = "RV coil";
+var QUAD_ABBOTT = ["D1", "M2", "M3", "P4"];   // Abbott electrode naming
+var QUAD        = ["LV1", "LV2", "LV3", "LV4"];
+var BIPOLAR     = ["LV tip", "LV ring"];
+
+function allPairings(els) {
+  var out = [], i, j;
+  for (i = 0; i < els.length; i++) {
+    for (j = 0; j < els.length; j++) if (i !== j) out.push([els[i], els[j]]);
+    out.push([els[i], RV_COIL]);
+  }
+  return out;
+}
+
+var LEAD_LIBRARY = [
+  { id: "manual", group: "Start blank", label: "Manual / lead not listed", vectors: [] },
+
+  /* ---- Abbott (St. Jude Medical) ---- */
+  /* The classic Quadra programmable set is a restricted 10, narrower than the geometry. */
+  { id: "quartet10", group: "Abbott", label: "Quartet — 10-vector set",
+    vectors: [ ["D1", RV_COIL], ["D1", "M2"], ["D1", "P4"],
+               ["M2", RV_COIL], ["M2", "P4"],
+               ["M3", RV_COIL], ["M3", "M2"], ["M3", "P4"],
+               ["P4", RV_COIL], ["P4", "M2"] ] },
+  { id: "quartetall", group: "Abbott", label: "Quartet — all pairings", vectors: allPairings(QUAD_ABBOTT) },
+  { id: "quickflex",  group: "Abbott", label: "QuickFlex / QuickFlex µ (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "quicksite",  group: "Abbott", label: "QuickSite (bipolar)", vectors: allPairings(BIPOLAR) },
+
+  /* ---- Boston Scientific ---- */
+  { id: "acuityx4",   group: "Boston Scientific", label: "ACUITY X4 (Straight / Spiral S / Spiral L)", vectors: allPairings(QUAD) },
+  { id: "acuityspir", group: "Boston Scientific", label: "ACUITY Spiral (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "acuitysteer",group: "Boston Scientific", label: "ACUITY Steerable (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "easytrak",   group: "Boston Scientific", label: "EASYTRAK 2 / 3 (bipolar)", vectors: allPairings(BIPOLAR) },
+
+  /* ---- Medtronic ---- */
+  { id: "performa",   group: "Medtronic", label: "Attain Performa (Straight / S-shape / Spiral)", vectors: allPairings(QUAD) },
+  { id: "stabquad",   group: "Medtronic", label: "Attain Stability Quad (active fixation)", vectors: allPairings(QUAD) },
+  { id: "ability",    group: "Medtronic", label: "Attain Ability / Ability Plus (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "attainotw",  group: "Medtronic", label: "Attain Bipolar OTW (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "starfix",    group: "Medtronic", label: "Attain StarFix (bipolar, active fixation)", vectors: allPairings(BIPOLAR) },
+  { id: "stability",  group: "Medtronic", label: "Attain Stability (bipolar, active fixation)", vectors: allPairings(BIPOLAR) },
+
+  /* ---- Biotronik ---- */
+  { id: "sentusqp",   group: "Biotronik", label: "Sentus QP (OTW-QP L / S)", vectors: allPairings(QUAD) },
+  { id: "sentusbp",   group: "Biotronik", label: "Sentus BP (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "corox",      group: "Biotronik", label: "Corox OTW BP / OTW-S BP (bipolar)", vectors: allPairings(BIPOLAR) },
+
+  /* ---- MicroPort CRM (formerly LivaNova / Sorin) ---- */
+  { id: "situsqp",    group: "MicroPort CRM", label: "Situs QP (quadripolar)", vectors: allPairings(QUAD) },
+  { id: "situsbp",    group: "MicroPort CRM", label: "Situs OTW BP (bipolar)", vectors: allPairings(BIPOLAR) },
+
+  /* ---- Geometry-only fallbacks for anything not named above ---- */
+  { id: "genericquad", group: "Generic", label: "Any quadripolar LV lead (LV1–LV4)", vectors: allPairings(QUAD) },
+  { id: "genericbp",   group: "Generic", label: "Any bipolar LV lead (tip / ring)", vectors: allPairings(BIPOLAR) }
+];
+
+/* ================================================================== STATE */
+
+var POSITIONS = ["sitting", "supine"];   // sitting first: it is the default and the one tested first
+var POS_LABEL = { supine: "Supine", sitting: "Sitting" };
+var STORE_KEY = "lv-lead-test";
+var MAILTO_KEY = "lv-lead-test-mailto";
+var MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;   // a capture older than a week is stale scratch
+var MAILTO_BODY_LIMIT = 1800;               // practical ceiling before clients truncate
+
+var state = blankState();
+var position = "sitting";
+var outMode = null;
+var seq = 0;
+
+function blankState() {
+  var now = new Date();
+  return {
+    schema: "lv-lead-test/1",
+    captureId: makeCaptureId(now),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    preset: "manual",
+    leadModel: "",
+    generator: "",
+    tag: "",
+    vectors: [],
+    finalVectorId: "",
+    notes: ""
+  };
+}
+
+function makeCaptureId(d) {
+  function p(n) { return String(n).padStart(2, "0"); }
+  return "LV-" + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes());
+}
+
+function blankPositionData() { return { threshold: "", pw: "", phrenic: "", phrenicV: "" }; }
+
+function newVector(cathode, anode) {
+  seq++;
+  var v = { id: "v" + seq, cathode: cathode || "", anode: anode || "",
+            impedance: "", qrs: "", candidate: false, byPosition: {} };
+  POSITIONS.forEach(function (p) { v.byPosition[p] = blankPositionData(); });
+  return v;
+}
+
+function vectorLabel(v) {
+  if (!v.cathode && !v.anode) return "(unnamed vector)";
+  return (v.cathode || "?") + " → " + (v.anode || "?");
+}
+
+/* A position counts as "has data" only if something was actually measured for it, so the
+   chips can't be lit up by an incidentally-focused empty field. */
+function positionFilled(v, p) {
+  var d = v.byPosition[p] || {};
+  return !!(d.threshold || d.pw || d.phrenic || d.phrenicV);
+}
+
+function hasAnyData(v) {
+  return !!(v.impedance || v.qrs) || POSITIONS.some(function (p) { return positionFilled(v, p); });
+}
+
+/* ================================================================ RENDER */
+
+function render() {
+  renderPresetOptions();
+  document.getElementById("capture-id-note").textContent = state.captureId;
+  document.getElementById("lead-preset").value = state.preset;
+  document.getElementById("lead-model").value = state.leadModel;
+  document.getElementById("generator").value = state.generator;
+  document.getElementById("tag").value = state.tag;
+  document.getElementById("notes").value = state.notes;
+  renderVectors();
+  renderFinalOptions();
+  renderCompare();
+  syncPositionButtons();
+}
+
+/* Grouped by manufacturer: the list is long enough that a flat one is unusable on a phone,
+   and the grouping is how you find your lead when you know the vendor but not the model. */
+function renderPresetOptions() {
+  var sel = document.getElementById("lead-preset");
+  if (sel.options.length) return;
+  var groups = {};
+  LEAD_LIBRARY.forEach(function (L) {
+    if (!groups[L.group]) {
+      groups[L.group] = document.createElement("optgroup");
+      groups[L.group].label = L.group;
+      sel.appendChild(groups[L.group]);
+    }
+    var o = document.createElement("option");
+    o.value = L.id;
+    o.textContent = L.label + (L.vectors.length ? "  (" + L.vectors.length + ")" : "");
+    groups[L.group].appendChild(o);
+  });
+}
+
+function renderVectors() {
+  var list = document.getElementById("vec-list");
+  list.textContent = "";
+  state.vectors.forEach(function (v) { list.appendChild(vectorNode(v)); });
+  document.getElementById("vec-empty").hidden = state.vectors.length > 0;
+  document.getElementById("vec-count").textContent =
+    state.vectors.length ? state.vectors.length + " vectors · " + POS_LABEL[position] : "";
+}
+
+function vectorNode(v) {
+  var d = v.byPosition[position];
+  var wrap = el("div", "vec" + (v.candidate ? " is-candidate" : ""));
+
+  /* --- header: name, position chips, candidate star, delete --- */
+  var top = el("div", "vec-top");
+  var name = el("div", "vec-name");
+  name.appendChild(textInput(vectorLabel(v), "Cathode → Anode", function (val) {
+    var parts = val.split(/→|->|\//);
+    v.cathode = (parts[0] || "").trim();
+    v.anode = (parts[1] || "").trim();
+    markDirty(); renderFinalOptions(); renderCompare();
+  }));
+  top.appendChild(name);
+
+  var chips = el("div", "chips");
+  POSITIONS.forEach(function (p) {
+    var c = el("span", "chip" + (positionFilled(v, p) ? " on" : ""));
+    c.textContent = POS_LABEL[p].slice(0, 3).toUpperCase();
+    c.title = POS_LABEL[p] + (positionFilled(v, p) ? " — recorded" : " — not recorded");
+    chips.appendChild(c);
+  });
+  top.appendChild(chips);
+
+  var star = el("button", "cand-btn");
+  star.type = "button";
+  star.textContent = "★";
+  star.title = "Mark as a candidate (reveals paced QRS width)";
+  star.setAttribute("aria-pressed", v.candidate ? "true" : "false");
+  star.onclick = function () {
+    v.candidate = !v.candidate;
+    if (!v.candidate && state.finalVectorId === v.id) state.finalVectorId = "";
+    markDirty(); renderVectors(); renderFinalOptions(); renderCompare();
+  };
+  top.appendChild(star);
+
+  var del = el("button", "del-btn");
+  del.type = "button";
+  del.textContent = "×";
+  del.title = "Delete this vector";
+  del.onclick = function () {
+    state.vectors = state.vectors.filter(function (x) { return x.id !== v.id; });
+    if (state.finalVectorId === v.id) state.finalVectorId = "";
+    markDirty(); renderVectors(); renderFinalOptions(); renderCompare();
+  };
+  top.appendChild(del);
+  wrap.appendChild(top);
+
+  /* --- measurements: tinted fields swap with the position toggle --- */
+  var grid = el("div", "vec-grid");
+  grid.appendChild(field("Thr (V)", numInput(d.threshold, "1.0", function (val) {
+    d.threshold = val; markDirty(); renderChips(); renderCompare();
+  }), true));
+  grid.appendChild(field("PW (ms)", numInput(d.pw, "0.5", function (val) {
+    d.pw = val; markDirty(); renderChips(); renderCompare();
+  }), true));
+  grid.appendChild(field("PNS", selectInput(d.phrenic, ["", "No", "Yes"], function (val) {
+    d.phrenic = val; markDirty(); renderVectors(); renderCompare();
+  }), true));
+
+  /* Voltage at which stim appears only means something once stim is present. */
+  var pnsV = field("PNS at (V)", numInput(d.phrenicV, "4.0", function (val) {
+    d.phrenicV = val; markDirty(); renderChips(); renderCompare();
+  }), true);
+  if (d.phrenic !== "Yes") pnsV.className += " hidden";
+  grid.appendChild(pnsV);
+
+  grid.appendChild(field("Z (Ω)", numInput(v.impedance, "700", function (val) {
+    v.impedance = val; markDirty(); renderCompare();
+  }), false));
+
+  /* QRS width is only asked for on vectors actually in the running. */
+  var qrs = field("QRS (ms)", numInput(v.qrs, "150", function (val) {
+    v.qrs = val; markDirty(); renderCompare();
+  }), false);
+  if (!v.candidate) qrs.className += " hidden";
+  grid.appendChild(qrs);
+
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+/* Repaint only the position chips. Typing a threshold shouldn't rebuild the row the user is
+   still inside — that would drop focus on every keystroke. */
+function renderChips() {
+  var rows = document.getElementById("vec-list").children;
+  state.vectors.forEach(function (v, i) {
+    var row = rows[i]; if (!row) return;
+    var chips = row.querySelectorAll(".chip");
+    POSITIONS.forEach(function (p, j) {
+      if (chips[j]) chips[j].className = "chip" + (positionFilled(v, p) ? " on" : "");
+    });
+  });
+}
+
+function renderFinalOptions() {
+  var sel = document.getElementById("final-vector");
+  sel.textContent = "";
+  sel.appendChild(new Option("—", ""));
+  state.vectors.filter(function (v) { return v.candidate; })
+    .forEach(function (v) { sel.appendChild(new Option(vectorLabel(v), v.id)); });
+  sel.value = state.finalVectorId || "";
+  state.finalVectorId = sel.value;   // a deleted/unstarred final falls back to none
+}
+
+function renderCompare() {
+  state.finalVectorId = document.getElementById("final-vector").value;
+  var t = document.getElementById("cmp-table");
+  t.textContent = "";
+  if (!state.vectors.length) {
+    t.innerHTML = "<tr><td style='color:#667;font-style:italic'>No vectors yet.</td></tr>";
+    return;
+  }
+  var head = "<tr><th>Vector</th><th>Z (Ω)</th>"
+           + POSITIONS.map(function (p) {
+               return "<th>" + POS_LABEL[p] + " thr</th><th>" + POS_LABEL[p] + " PNS</th>";
+             }).join("")
+           + "<th>QRS</th></tr>";
+  var body = state.vectors.map(function (v) {
+    function thr(p) {
+      var d = v.byPosition[p];
+      if (!d.threshold) return "—";
+      return d.threshold + " V" + (d.pw ? " @ " + d.pw + " ms" : "");
+    }
+    function pns(p) {
+      var d = v.byPosition[p];
+      if (d.phrenic === "Yes") return { txt: d.phrenicV ? "Yes @ " + d.phrenicV + " V" : "Yes", bad: true };
+      if (d.phrenic === "No") return { txt: "No", bad: false };
+      return { txt: "—", bad: false };
+    }
+    var cells = POSITIONS.map(function (p) {
+      var x = pns(p);
+      return "<td>" + esc(thr(p)) + "</td>"
+           + "<td class='" + (x.bad ? "pns-yes" : "") + "'>" + esc(x.txt) + "</td>";
+    }).join("");
+    return "<tr" + (v.id === state.finalVectorId ? " class='is-final'" : "") + ">"
+      + "<td>" + esc(vectorLabel(v)) + (v.candidate ? " ★" : "") + "</td>"
+      + "<td>" + esc(v.impedance || "—") + "</td>"
+      + cells
+      + "<td>" + esc(v.qrs ? v.qrs + " ms" : "—") + "</td>"
+      + "</tr>";
+  }).join("");
+  t.innerHTML = head + body;
+}
+
+/* -------------------------------------------------------- DOM helpers */
+function el(tag, cls) { var n = document.createElement(tag); if (cls) n.className = cls; return n; }
+
+function field(label, input, positionDependent) {
+  var f = el("div", "field" + (positionDependent ? " pos-dep" : ""));
+  var l = el("span", "lbl"); l.textContent = label;
+  f.appendChild(l); f.appendChild(input);
+  return f;
+}
+function textInput(val, ph, onchange) {
+  var i = document.createElement("input");
+  i.type = "text"; i.value = val; i.placeholder = ph || "";
+  i.oninput = function () { onchange(i.value); };
+  return i;
+}
+function numInput(val, ph, onchange) {
+  var i = document.createElement("input");
+  /* inputmode=decimal, not type=number: type=number silently discards "1.0" mid-typing on
+     some mobile keyboards and offers spinners nobody wants on a phone. */
+  i.type = "text"; i.inputMode = "decimal"; i.value = val; i.placeholder = ph || "";
+  i.oninput = function () { onchange(i.value.trim()); };
+  return i;
+}
+function selectInput(val, opts, onchange) {
+  var s = document.createElement("select");
+  opts.forEach(function (o) { s.appendChild(new Option(o === "" ? "—" : o, o)); });
+  s.value = val;
+  s.onchange = function () { onchange(s.value); };
+  return s;
+}
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+/* ================================================================ ACTIONS */
+
+function setPosition(p) {
+  position = p;
+  syncPositionButtons();
+  renderVectors();
+}
+function syncPositionButtons() {
+  document.getElementById("pos-supine").setAttribute("aria-pressed", position === "supine" ? "true" : "false");
+  document.getElementById("pos-sitting").setAttribute("aria-pressed", position === "sitting" ? "true" : "false");
+}
+
+function onPresetChange() {
+  var id = document.getElementById("lead-preset").value;
+  var L = LEAD_LIBRARY.filter(function (x) { return x.id === id; })[0];
+  if (!L) return;
+
+  var hasData = state.vectors.some(hasAnyData);
+  if (hasData && !confirm("Replace the current vector list? Measurements already entered will be lost.")) {
+    document.getElementById("lead-preset").value = state.preset;
+    return;
+  }
+
+  state.preset = id;
+  state.vectors = L.vectors.map(function (pair) { return newVector(pair[0], pair[1]); });
+  state.finalVectorId = "";
+  markDirty(); renderVectors(); renderFinalOptions(); renderCompare();
+}
+
+function addVector() {
+  state.vectors.push(newVector("", ""));
+  markDirty(); renderVectors();
+  var inputs = document.querySelectorAll("#vec-list .vec-name input");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function clearMeasurements() {
+  if (!confirm("Clear every measurement but keep the vector list?")) return;
+  state.vectors.forEach(function (v) {
+    v.impedance = ""; v.qrs = ""; v.candidate = false;
+    POSITIONS.forEach(function (p) { v.byPosition[p] = blankPositionData(); });
+  });
+  state.finalVectorId = "";
+  markDirty(); renderVectors(); renderFinalOptions(); renderCompare();
+}
+
+function removeAllVectors() {
+  if (!confirm("Remove all vectors?")) return;
+  state.vectors = []; state.finalVectorId = "";
+  markDirty(); renderVectors(); renderFinalOptions(); renderCompare();
+}
+
+function newSession() {
+  if (!confirm("Start a new capture? The current one is discarded unless you exported it.")) return;
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  state = blankState();
+  position = "sitting";
+  outMode = null;
+  document.getElementById("out").textContent = "Press “Text report” or “JSON”.";
+  document.getElementById("lead-preset").value = "manual";
+  render();
+  toast("New capture started");
+}
+
+function jumpToReport() {
+  showOut("text");
+  document.getElementById("s-report").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/* ================================================================ PERSIST */
+
+function collect() {
+  state.leadModel = document.getElementById("lead-model").value.trim();
+  state.generator = document.getElementById("generator").value.trim();
+  state.tag = document.getElementById("tag").value.trim();
+  state.notes = document.getElementById("notes").value;
+  state.finalVectorId = document.getElementById("final-vector").value;
+  state.updatedAt = new Date().toISOString();
+  return state;
+}
+
+var saveTimer = null;
+function markDirty() {
+  setStatus("Saving…", "dirty");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 400);
+}
+function save() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(collect()));
+    setStatus("Saved " + new Date().toLocaleTimeString(), "saved");
+  } catch (e) {
+    setStatus("Save failed — export before you leave", "dirty");
+  }
+}
+function setStatus(msg, cls) {
+  var n = document.getElementById("save-status");
+  n.textContent = msg; n.className = "save-status " + (cls || "");
+}
+
+function load() {
+  var raw;
+  try { raw = localStorage.getItem(STORE_KEY); } catch (e) { return; }
+  if (!raw) return;
+  var d;
+  try { d = JSON.parse(raw); } catch (e) { return; }
+  if (!d || d.schema !== "lv-lead-test/1") return;
+
+  /* A capture is a scratchpad for one visit. Anything left sitting here for a week is a
+     forgotten draft, not work in progress — drop it rather than resurrect it. */
+  var age = Date.now() - Date.parse(d.updatedAt || d.createdAt || 0);
+  if (isFinite(age) && age > MAX_AGE_MS) {
+    try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    return;
+  }
+
+  state = d;
+  (state.vectors || []).forEach(function (v) {
+    v.byPosition = v.byPosition || {};
+    POSITIONS.forEach(function (p) { if (!v.byPosition[p]) v.byPosition[p] = blankPositionData(); });
+    var n = parseInt(String(v.id).replace(/\D/g, ""), 10);
+    if (isFinite(n) && n > seq) seq = n;
+  });
+}
+
+function saveMailTo() {
+  try { localStorage.setItem(MAILTO_KEY, document.getElementById("mail-to").value.trim()); } catch (e) {}
+}
+function loadMailTo() {
+  try { document.getElementById("mail-to").value = localStorage.getItem(MAILTO_KEY) || ""; } catch (e) {}
+}
+
+/* ================================================================= OUTPUT */
+
+function buildText() {
+  var s = collect();
+  var L = ["LV LEAD TESTING", "=".repeat(40)];
+  L.push("Capture:   " + s.captureId);
+  L.push("Recorded:  " + new Date(s.createdAt).toLocaleString());
+  var lead = [s.leadModel, presetLabel(s.preset)].filter(Boolean).join("  ·  ");
+  if (lead) L.push("Lead:      " + lead);
+  if (s.generator) L.push("Generator: " + s.generator);
+  if (s.tag) L.push("Tag:       " + s.tag);
+  L.push("");
+
+  if (!s.vectors.length) L.push("(no vectors recorded)");
+
+  /* A preset drops 10-16 vectors in, but a visit only ever tests some of them. Printing an
+     empty stanza for each untested one buries the real data — they get one summary line at
+     the end instead, which still records that they were available and skipped. */
+  var tested = s.vectors.filter(hasAnyData);
+  var untested = s.vectors.filter(function (v) { return !hasAnyData(v); });
+  if (s.vectors.length && !tested.length) L.push("(no measurements recorded)");
+
+  tested.forEach(function (v) {
+    var head = vectorLabel(v);
+    if (v.candidate) head += "  ★";
+    if (v.impedance) head += "   — Z " + v.impedance + " Ω";
+    L.push(head);
+    POSITIONS.forEach(function (p) {
+      var d = v.byPosition[p];
+      if (!positionFilled(v, p)) return;
+      var bits = [];
+      if (d.threshold) bits.push(d.threshold + " V" + (d.pw ? " @ " + d.pw + " ms" : ""));
+      if (d.phrenic === "Yes") bits.push("PNS" + (d.phrenicV ? " at " + d.phrenicV + " V" : " present"));
+      else if (d.phrenic === "No") bits.push("no PNS");
+      L.push("    " + (POS_LABEL[p] + ":").padEnd(9) + bits.join("  ·  "));
+    });
+    if (v.qrs) L.push("    " + "QRS:".padEnd(9) + v.qrs + " ms");
+    L.push("");
+  });
+
+  if (untested.length) {
+    L.push("Not tested: " + untested.map(vectorLabel).join(", "));
+    L.push("");
+  }
+
+  var fin = s.vectors.filter(function (v) { return v.id === s.finalVectorId; })[0];
+  L.push("-".repeat(40));
+  if (fin) {
+    L.push("SELECTED VECTOR: " + vectorLabel(fin));
+    POSITIONS.forEach(function (p) {
+      var d = fin.byPosition[p];
+      if (!positionFilled(fin, p)) return;
+      var bits = [];
+      if (d.threshold) bits.push("threshold " + d.threshold + " V" + (d.pw ? " @ " + d.pw + " ms" : ""));
+      if (d.phrenic === "Yes") bits.push("phrenic stimulation" + (d.phrenicV ? " at " + d.phrenicV + " V" : ""));
+      else if (d.phrenic === "No") bits.push("no phrenic stimulation");
+      L.push("  " + POS_LABEL[p] + ": " + bits.join(", "));
+    });
+    if (fin.impedance) L.push("  Impedance: " + fin.impedance + " Ω");
+    if (fin.qrs) L.push("  Paced QRS width: " + fin.qrs + " ms");
+  } else {
+    L.push("SELECTED VECTOR: not chosen");
+  }
+  if (s.notes) { L.push(""); L.push("Notes:"); L.push("  " + s.notes.replace(/\n/g, "\n  ")); }
+  return L.join("\n");
+}
+
+function presetLabel(id) {
+  var L = LEAD_LIBRARY.filter(function (x) { return x.id === id; })[0];
+  if (!L || L.id === "manual") return "";
+  /* The manufacturer is the optgroup, not part of the label — put it back for the report. */
+  return (L.group === "Generic" ? "" : L.group + " ") + L.label;
+}
+
+function buildJSON() { return JSON.stringify(collect(), null, 2); }
+
+function showOut(mode) {
+  outMode = mode;
+  document.getElementById("out").textContent = mode === "json" ? buildJSON() : buildText();
+}
+
+function currentOut() {
+  if (!outMode) showOut("text");
+  return document.getElementById("out").textContent;
+}
+
+function copyOut() {
+  var txt = currentOut();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(function () { toast("Copied"); },
+                                            function () { legacyCopy(txt); });
+  } else { legacyCopy(txt); }
+}
+function legacyCopy(txt) {
+  var ta = document.createElement("textarea");
+  ta.value = txt; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  var ok = false;
+  try { ok = document.execCommand("copy"); } catch (e) {}
+  ta.remove();
+  toast(ok ? "Copied" : "Copy failed — select the text manually");
+}
+
+function downloadOut() {
+  var json = outMode === "json";
+  var blob = new Blob([currentOut()], { type: json ? "application/json" : "text/plain" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = collect().captureId + (json ? ".json" : ".txt");
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+}
+
+/* mailto is a top-level navigation to the OS mail client, so nothing leaves the browser until
+   the user presses send in their own mail app. Long bodies get truncated by many clients, so
+   anything over the limit goes to the clipboard and the draft just says to paste. */
+function emailReport() {
+  var s = collect();
+  var to = document.getElementById("mail-to").value.trim();
+  var body = currentOut();
+  var subject = "LV lead testing — " + s.captureId + (s.tag ? " (" + s.tag + ")" : "");
+  var encoded = encodeURIComponent(body);
+
+  if (encoded.length > MAILTO_BODY_LIMIT) {
+    copyOut();
+    body = "The full capture was copied to the clipboard — paste it here.\n\n"
+         + "Capture: " + s.captureId;
+    encoded = encodeURIComponent(body);
+    toast("Report copied — paste it into the draft");
+  }
+  window.location.href = "mailto:" + encodeURIComponent(to)
+    + "?subject=" + encodeURIComponent(subject) + "&body=" + encoded;
+}
+
+var toastTimer = null;
+function toast(msg) {
+  var t = document.getElementById("toast");
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.hidden = true; }, 2600);
+}
+
+/* ==================================================================== BOOT */
+load();
+render();
+loadMailTo();
+setStatus(state.vectors.length ? "Restored draft" : "", "");
+
+/* A phone can be locked, backgrounded, or killed mid-visit — flush the pending debounce
+   rather than lose the last field typed. */
+window.addEventListener("pagehide", function () { clearTimeout(saveTimer); save(); });
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "hidden") { clearTimeout(saveTimer); save(); }
+});
+</script>
+</body>
+</html>
