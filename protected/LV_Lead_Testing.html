@@ -384,15 +384,15 @@ pre.out {
         </div>
         <div class="field">
           <span class="lbl">Lead model (as programmed)</span>
-          <input type="text" id="lead-model" placeholder="e.g. 1458Q" oninput="markDirty()">
+          <input type="text" id="lead-model" oninput="markDirty()">
         </div>
         <div class="field">
           <span class="lbl">Generator</span>
-          <input type="text" id="generator" placeholder="e.g. Quadra Assura" oninput="markDirty()">
+          <input type="text" id="generator" oninput="markDirty()">
         </div>
         <div class="field">
           <span class="lbl">Tag (non-identifying)</span>
-          <input type="text" id="tag" placeholder="e.g. Rm 3, 2pm" oninput="markDirty()">
+          <input type="text" id="tag" oninput="markDirty()">
           <span class="hint">No patient identifiers.</span>
         </div>
       </div>
@@ -440,7 +440,7 @@ pre.out {
         </div>
         <div class="field">
           <span class="lbl">Notes</span>
-          <textarea id="notes" placeholder="Anything the numbers don't say…" oninput="markDirty()"></textarea>
+          <textarea id="notes" oninput="markDirty()"></textarea>
         </div>
       </div>
     </div>
@@ -461,7 +461,7 @@ pre.out {
       <div class="fg" style="grid-template-columns: minmax(200px,1fr); margin-bottom: 12px;">
         <div class="field">
           <span class="lbl">Email to</span>
-          <input type="email" id="mail-to" placeholder="you@example.com" oninput="saveMailTo()">
+          <input type="email" id="mail-to" oninput="saveMailTo()">
           <span class="hint">Stored on this device only — never in the repo, never in the capture.
             Used by “Email”; the share sheet asks for the recipient itself.</span>
         </div>
@@ -740,7 +740,7 @@ function vectorNode(v) {
   /* --- header: name, position chips, candidate star, delete --- */
   var top = el("div", "vec-top");
   var name = el("div", "vec-name");
-  name.appendChild(textInput(vectorLabel(v), "Cathode → Anode", function (val) {
+  name.appendChild(textInput(vectorLabel(v), function (val) {
     var parts = val.split(/→|->|\//);
     v.cathode = (parts[0] || "").trim();
     v.anode = (parts[1] || "").trim();
@@ -783,23 +783,23 @@ function vectorNode(v) {
 
   /* --- measurements: tinted fields swap with the position toggle --- */
   var grid = el("div", "vec-grid");
-  grid.appendChild(posField("Thr (V)", d.threshold, "1.0", function (val) { d.threshold = val; }));
-  grid.appendChild(posField("PW (ms)", d.pw, "0.5", function (val) { d.pw = val; }));
+  grid.appendChild(posField("Thr (V)", d.threshold, function (val) { d.threshold = val; }));
+  grid.appendChild(posField("PW (ms)", d.pw, function (val) { d.pw = val; }));
   grid.appendChild(posSelect("PNS", d.phrenic, function (val) {
     d.phrenic = val; markDirty(); renderVectors(); renderCompare();
   }));
 
   /* Voltage at which stim appears only means something once stim is present. */
-  var pnsV = posField("PNS at (V)", d.phrenicV, "4.0", function (val) { d.phrenicV = val; });
+  var pnsV = posField("PNS at (V)", d.phrenicV, function (val) { d.phrenicV = val; });
   if (d.phrenic !== "Yes") pnsV.className += " hidden";
   grid.appendChild(pnsV);
 
-  grid.appendChild(field("Z (Ω)", numInput(v.impedance, "700", function (val) {
+  grid.appendChild(field("Z (Ω)", numInput(v.impedance, function (val) {
     v.impedance = val; markDirty(); renderCompare();
   }), false));
 
   /* QRS width is only asked for on vectors actually in the running. */
-  var qrs = field("QRS (ms)", numInput(v.qrs, "150", function (val) {
+  var qrs = field("QRS (ms)", numInput(v.qrs, function (val) {
     v.qrs = val; markDirty(); renderCompare();
   }), false);
   if (!v.candidate) qrs.className += " hidden";
@@ -834,9 +834,9 @@ function refreshStatus() {
 
 /* Position-dependent inputs own their own tint: it has to clear on keystroke, and a full
    re-render would take the focus with it. */
-function posField(label, value, ph, onchange) {
+function posField(label, value, onchange) {
   var wrap;
-  var input = numInput(value, ph, function (val) {
+  var input = numInput(value, function (val) {
     onchange(val);
     wrap.classList.toggle("is-empty", !val);
     markDirty(); refreshStatus(); renderCompare();
@@ -913,17 +913,17 @@ function field(label, input, positionDependent) {
   f.appendChild(l); f.appendChild(input);
   return f;
 }
-function textInput(val, ph, onchange) {
+function textInput(val, onchange) {
   var i = document.createElement("input");
-  i.type = "text"; i.value = val; i.placeholder = ph || "";
+  i.type = "text"; i.value = val;
   i.oninput = function () { onchange(i.value); };
   return i;
 }
-function numInput(val, ph, onchange) {
+function numInput(val, onchange) {
   var i = document.createElement("input");
   /* inputmode=decimal, not type=number: type=number silently discards "1.0" mid-typing on
      some mobile keyboards and offers spinners nobody wants on a phone. */
-  i.type = "text"; i.inputMode = "decimal"; i.value = val; i.placeholder = ph || "";
+  i.type = "text"; i.inputMode = "decimal"; i.value = val;
   i.oninput = function () { onchange(i.value.trim()); };
   return i;
 }
