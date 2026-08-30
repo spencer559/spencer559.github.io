@@ -79,6 +79,10 @@ body {
 .sec-body { padding: 12px; }
 
 .fg { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+/* Outcome row: the vector picker and the notes box both need real width. Two explicit tracks
+   can't wrap like the auto-fit base rule does, so below the breakpoint they stack instead of
+   halving a phone screen between them. */
+.fg-outcome { grid-template-columns: minmax(200px, 1fr) minmax(200px, 2fr); }
 .field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--navy); }
 .hint { font-size: 9.5px; color: var(--text-soft); font-style: italic; }
@@ -164,6 +168,9 @@ pre.out {
 }
 .toast[hidden] { display: none; }
 
+@media (max-width: 600px) {
+  .fg-outcome { grid-template-columns: 1fr; }
+}
 @media (max-width: 520px) {
   .main { padding: 10px 8px 0; }
   .pos-switch button { min-width: 0; flex: 1; padding: 9px 10px; }
@@ -249,7 +256,7 @@ pre.out {
   <section class="section">
     <div class="sec-hdr">Outcome</div>
     <div class="sec-body">
-      <div class="fg" style="grid-template-columns: minmax(200px, 1fr) minmax(200px, 2fr);">
+      <div class="fg fg-outcome">
         <div class="field">
           <span class="lbl">Final selected vector</span>
           <select id="final-vector" onchange="markDirty(); renderCompare();"></select>
@@ -279,7 +286,8 @@ pre.out {
         <div class="field">
           <span class="lbl">Email to</span>
           <input type="email" id="mail-to" placeholder="you@example.com" oninput="saveMailTo()">
-          <span class="hint">Stored on this device only — never in the repo, never in the capture.</span>
+          <span class="hint">Stored on this device only — never in the repo, never in the capture.
+            Used by “Email”; the share sheet asks for the recipient itself.</span>
         </div>
       </div>
       <div class="out-actions">
@@ -287,6 +295,7 @@ pre.out {
         <button type="button" class="btn btn-primary" onclick="showOut('json')">JSON</button>
         <button type="button" class="btn" onclick="copyOut()">Copy</button>
         <button type="button" class="btn" onclick="downloadOut()">Download</button>
+        <button type="button" class="btn btn-primary" id="share-btn" hidden onclick="shareCapture()">Share / attach</button>
         <button type="button" class="btn" onclick="emailReport()">Email</button>
       </div>
       <pre class="out" id="out">Press “Text report” or “JSON”.</pre>
@@ -907,8 +916,40 @@ function downloadOut() {
   setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
 }
 
+/* The only way a web page can put a real FILE into an email is the native share sheet —
+   mailto: has no attachment parameter and never will, since a page that could attach arbitrary
+   files to a draft would be an exfiltration hole. navigator.share hands the OS an actual File,
+   the user picks Mail, and the .json lands as an attachment with the text report as the body.
+   Requires a secure context and a user gesture, both of which a button click satisfies.
+   Desktop browsers without Web Share Level 2 keep the Download → attach-by-hand path. */
+function shareSupportsFiles() {
+  try {
+    if (!navigator.share || !navigator.canShare) return false;
+    return navigator.canShare({ files: [new File(["{}"], "probe.json", { type: "application/json" })] });
+  } catch (e) { return false; }
+}
+
+function shareCapture() {
+  var s = collect();
+  var file;
+  try {
+    file = new File([buildJSON()], s.captureId + ".json", { type: "application/json" });
+  } catch (e) { toast("Sharing unavailable — use Download"); return; }
+
+  var payload = { files: [file], title: "LV lead testing — " + s.captureId, text: buildText() };
+  /* Some share targets refuse text and files together; fall back to the bare attachment
+     rather than failing outright, since the file is the part that matters. */
+  try { if (!navigator.canShare(payload)) payload = { files: [file] }; } catch (e) { payload = { files: [file] }; }
+
+  navigator.share(payload).catch(function (err) {
+    if (err && err.name === "AbortError") return;   // user dismissed the sheet — not an error
+    toast("Share failed — use Download instead");
+  });
+}
+
 /* mailto is a top-level navigation to the OS mail client, so nothing leaves the browser until
-   the user presses send in their own mail app. Long bodies get truncated by many clients, so
+   the user presses send in their own mail app. It carries the report as TEXT ONLY — see
+   shareCapture above for the attachment path. Long bodies get truncated by many clients, so
    anything over the limit goes to the clipboard and the draft just says to paste. */
 function emailReport() {
   var s = collect();
@@ -941,6 +982,7 @@ load();
 render();
 loadMailTo();
 setStatus(state.vectors.length ? "Restored draft" : "", "");
+if (shareSupportsFiles()) document.getElementById("share-btn").hidden = false;
 
 /* A phone can be locked, backgrounded, or killed mid-visit — flush the pending debounce
    rather than lose the last field typed. */
