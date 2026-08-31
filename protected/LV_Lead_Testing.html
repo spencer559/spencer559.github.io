@@ -282,8 +282,21 @@ textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
 .vec[data-status="done"].is-candidate { box-shadow: inset 3px 0 0 var(--green), var(--shadow-sm); }
 .vec.is-hidden { display: none; }
 .vec-top { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
-.vec-name { font-size: 13px; font-weight: 700; color: var(--accent-text); flex: 1; min-width: 0; }
-.vec-name input { font-size: 13px; font-weight: 700; color: var(--accent-text); padding: 5px 8px; }
+/* Two boxes with the arrow fixed between them, rather than one box holding "D1 → P4".
+   The arrow is the clearest part of the label and the hardest character to reach on a phone
+   keyboard, so it is furniture now: type the cathode, tab, type the anode. */
+.vec-name { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.vec-name input {
+  font-size: 13px; font-weight: 700; color: var(--accent-text); padding: 5px 8px;
+  /* Capped: an electrode name is three or four characters, and a box stretched across half
+     the header reads as a field that wants a sentence. Shrinks with the row on a phone. */
+  flex: 1 1 0; min-width: 0; max-width: 140px; text-align: center;
+}
+.vec-name input::placeholder { font-weight: 500; color: var(--text-faint); }
+.vn-arrow {
+  flex: 0 0 auto; font-size: 14px; font-weight: 700; color: var(--text-soft);
+  -webkit-user-select: none; user-select: none;
+}
 /* Which positions this vector already has data for - so a half-finished vector is visible
    without flipping the toggle back and forth. */
 .chips { display: flex; gap: 4px; }
@@ -942,11 +955,15 @@ function vectorNode(v) {
   /* --- header: name, position chips, candidate star, delete --- */
   var top = el("div", "vec-top");
   var name = el("div", "vec-name");
-  name.appendChild(textInput(vectorLabel(v), function (val) {
-    var parts = val.split(/→|->|\//);
-    v.cathode = (parts[0] || "").trim();
-    v.anode = (parts[1] || "").trim();
-    markDirty(); renderFinalOptions(); renderCompare();
+  name.appendChild(electrodeInput(v.cathode, "Cathode", "vn-cath", function (val) {
+    v.cathode = val; markDirty(); renderFinalOptions(); renderCompare();
+  }));
+  var arrow = el("span", "vn-arrow");
+  arrow.textContent = "\u2192";
+  arrow.setAttribute("aria-hidden", "true");
+  name.appendChild(arrow);
+  name.appendChild(electrodeInput(v.anode, "Anode", "vn-anode", function (val) {
+    v.anode = val; markDirty(); renderFinalOptions(); renderCompare();
   }));
   top.appendChild(name);
 
@@ -1115,10 +1132,17 @@ function field(label, input, positionDependent) {
   f.appendChild(l); f.appendChild(input);
   return f;
 }
-function textInput(val, onchange) {
+/* One half of a vector name. Autocorrect off across the board: a phone keyboard left to its
+   own devices turns "D1" into "Di" and "LV1" into "Lv1", and these are electrode names, not
+   prose. The label is spoken per box because the arrow between them is decoration. */
+function electrodeInput(val, placeholder, cls, onchange) {
   var i = document.createElement("input");
-  i.type = "text"; i.value = val;
-  i.oninput = function () { onchange(i.value); };
+  i.type = "text"; i.value = val; i.className = cls;
+  i.placeholder = placeholder;
+  i.setAttribute("aria-label", placeholder);
+  i.autocomplete = "off"; i.spellcheck = false;
+  i.setAttribute("autocorrect", "off");
+  i.oninput = function () { onchange(i.value.trim()); };
   return i;
 }
 function numInput(val, onchange) {
@@ -1173,7 +1197,7 @@ function choosePreset(id) {
 function addVector() {
   state.vectors.push(newVector("", ""));
   markDirty(); renderVectors();
-  var inputs = document.querySelectorAll("#vec-list .vec-name input");
+  var inputs = document.querySelectorAll("#vec-list .vn-cath");
   if (inputs.length) inputs[inputs.length - 1].focus();
 }
 
