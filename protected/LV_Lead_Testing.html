@@ -142,6 +142,91 @@ input:focus, select:focus, textarea:focus {
 }
 textarea { min-height: 64px; resize: vertical; line-height: 1.45; }
 
+/* ------------------------------------------------------------- lead picker
+   A native <select> gives an option one line of text it will not let you style, and this
+   control wants two: the name the lead is known by, and under it the model numbers the
+   programmer prints — which is often all that is on the screen when the name is not. So the
+   picker is a button that shows both lines, plus a modal list that shows both for every lead.
+   Modal rather than a drop-down because .section clips its own overflow (the rounded corner
+   over the accent header depends on it), and because a sheet is the easier target when this
+   is being driven one-handed beside a patient. */
+.picker-btn {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 38px;
+  font-family: inherit; text-align: left; padding: 5px 9px;
+  border: 1px solid var(--border-strong); border-radius: 6px;
+  background: var(--input-bg); color: var(--text); cursor: pointer;
+  -webkit-user-select: none; user-select: none;   /* a tap picks the lead, never the text */
+  transition: border-color .14s ease, background .14s ease, box-shadow .14s ease;
+}
+.picker-btn:hover { border-color: var(--accent-edge); }
+.picker-btn:focus-visible {
+  outline: none; background: var(--input-focus); border-color: var(--accent-text);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.pk-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pk-name { font-size: 14px; font-weight: 600; line-height: 1.3; }
+/* The model numbers are the subordinate line everywhere they appear: smaller, lighter, and
+   in the faint ink, so the name still carries the row. :empty keeps the button one line tall
+   for the leads whose numbers we do not list. */
+.pk-num {
+  font-size: 10.5px; font-weight: 400; line-height: 1.3; color: var(--text-faint);
+  font-variant-numeric: tabular-nums; letter-spacing: .2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pk-num:empty { display: none; }
+.pk-caret { flex-shrink: 0; font-size: 11px; color: var(--text-faint); }
+
+.pk-backdrop {
+  position: fixed; inset: 0; z-index: 90; background: rgba(10, 16, 24, .45);
+  display: flex; align-items: center; justify-content: center; padding: 24px 12px;
+}
+.pk-backdrop[hidden] { display: none; }
+.pk-panel {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow-md); width: 100%; max-width: 460px;
+  max-height: min(80vh, 620px); display: flex; flex-direction: column; overflow: hidden;
+}
+.pk-hdr {
+  background: var(--accent); color: var(--accent-fg); font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .8px; padding: 9px 8px 9px 14px;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.pk-x {
+  margin-left: auto; background: none; border: none; color: var(--accent-fg); opacity: .8;
+  font-size: 20px; line-height: 1; padding: 0 8px; cursor: pointer; font-family: inherit;
+}
+.pk-x:hover { opacity: 1; }
+.pk-list { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px; }
+.pk-group {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+  color: var(--text-faint); padding: 11px 9px 4px;
+}
+.pk-group:first-child { padding-top: 4px; }
+.pk-opt {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  font-family: inherit; color: var(--text); background: transparent;
+  border: 1px solid transparent; border-radius: 7px; padding: 8px 9px; cursor: pointer;
+  -webkit-user-select: none; user-select: none;
+  transition: background .12s ease, border-color .12s ease;
+}
+.pk-opt:hover, .pk-opt.is-active { background: var(--accent-soft); border-color: var(--accent-edge); }
+.pk-opt[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent-edge); }
+.pk-opt[aria-selected="true"] .pk-name { color: var(--accent-text); font-weight: 700; }
+.pk-tick { flex-shrink: 0; width: 13px; font-size: 11px; color: var(--accent-text); }
+/* Vector count: the old option text carried it as a trailing "(16)". Kept, but pushed to its
+   own column so it can never be mistaken for part of a model number. */
+.pk-count {
+  flex-shrink: 0; font-size: 9px; font-weight: 700; letter-spacing: .3px;
+  color: var(--text-faint); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 5px; font-variant-numeric: tabular-nums;
+}
+@media (max-width: 520px) {
+  /* Bottom sheet on a phone: the list is long, and the thumb is at the bottom of the screen. */
+  .pk-backdrop { align-items: flex-end; padding: 0; }
+  .pk-panel { max-width: none; border-radius: 12px 12px 0 0; max-height: 82vh; }
+  .pk-opt { padding: 10px 9px; }
+}
+
 /* ------------------------------------------------- position toggle (sticky) */
 /* Sticks under the app bar because on a phone it is the control reached most often: every
    vector is measured twice and the toggle is what says which half you are filling in. */
@@ -381,7 +466,15 @@ pre.out {
       <div class="fg">
         <div class="field">
           <span class="lbl">Manufacturer / Lead</span>
-          <select id="lead-preset" onchange="onPresetChange()"></select>
+          <button type="button" class="picker-btn" id="lead-preset-btn"
+                  aria-haspopup="listbox" aria-expanded="false" onclick="openPresetList()">
+            <span class="pk-text">
+              <span class="pk-name" id="lead-preset-name"></span>
+              <span class="pk-num" id="lead-preset-num"></span>
+            </span>
+            <span class="pk-caret" aria-hidden="true">&#9662;</span>
+          </button>
+          <span class="hint">Model numbers are a lookup aid &mdash; check them against the programmer.</span>
         </div>
         <div class="field">
           <span class="lbl">Lead model (as programmed)</span>
@@ -502,6 +595,16 @@ pre.out {
 
 <div class="toast" id="toast" hidden></div>
 
+<!-- Lead picker. Built once by buildPresetList(), opened from the Session card. -->
+<div class="pk-backdrop" id="lead-preset-modal" hidden onclick="if(event.target===this)closePresetList()">
+  <div class="pk-panel" role="dialog" aria-modal="true" aria-labelledby="pk-title">
+    <div class="pk-hdr" id="pk-title">Manufacturer / Lead
+      <button type="button" class="pk-x" onclick="closePresetList()" aria-label="Close">&times;</button>
+    </div>
+    <div class="pk-list" id="lead-preset-list" role="listbox" aria-label="Manufacturer / Lead" tabindex="-1"></div>
+  </div>
+</div>
+
 <!-- Filled on demand by buildPrintDoc(); the only thing the print stylesheet renders. -->
 <div class="print-doc" id="print-doc" aria-hidden="true"></div>
 
@@ -524,7 +627,15 @@ pre.out {
    These lists are NOT transcribed from the programmers and the model names are from general
    product knowledge, not a verified catalogue. Check both against the device in front of you.
    Nothing here auto-fills the lead-model field — that stays yours to type from the programmer,
-   so a wrong model number can never reach a report by default. */
+   so a wrong model number can never reach a report by default.
+
+   `models` is the number the programmer usually shows when it shows no name, which is the
+   common case — several numbers to a family, separated by " / ". It carries exactly the same
+   caveat as the names, one step weaker: it is recall, not a catalogue. It is shown in the
+   picker and nowhere else — it never reaches the lead-model field, the report, or the print
+   sheet — so it is a way of RECOGNISING the lead in front of you, never a source to copy
+   from. Entries left "" are the ones whose numbers are not worth a guess (Biotronik and
+   MicroPort order numbers in particular); fill them in as you confirm them. */
 
 var RV_COIL = "RV coil";
 var QUAD_ABBOTT = ["D1", "M2", "M3", "P4"];   // Abbott electrode naming
@@ -545,37 +656,37 @@ var LEAD_LIBRARY = [
 
   /* ---- Abbott (St. Jude Medical) ---- */
   /* The classic Quadra programmable set is a restricted 10, narrower than the geometry. */
-  { id: "quartet10", group: "Abbott", label: "Quartet — 10-vector set",
+  { id: "quartet10", group: "Abbott", label: "Quartet — 10-vector set", models: "1458Q / 1457Q / 1456Q",
     vectors: [ ["D1", RV_COIL], ["D1", "M2"], ["D1", "P4"],
                ["M2", RV_COIL], ["M2", "P4"],
                ["M3", RV_COIL], ["M3", "M2"], ["M3", "P4"],
                ["P4", RV_COIL], ["P4", "M2"] ] },
-  { id: "quartetall", group: "Abbott", label: "Quartet — all pairings", vectors: allPairings(QUAD_ABBOTT) },
-  { id: "quickflex",  group: "Abbott", label: "QuickFlex / QuickFlex µ (bipolar)", vectors: allPairings(BIPOLAR) },
-  { id: "quicksite",  group: "Abbott", label: "QuickSite (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "quartetall", group: "Abbott", label: "Quartet — all pairings", models: "1458Q / 1457Q / 1456Q", vectors: allPairings(QUAD_ABBOTT) },
+  { id: "quickflex",  group: "Abbott", label: "QuickFlex / QuickFlex µ (bipolar)", models: "1258T / 1158T", vectors: allPairings(BIPOLAR) },
+  { id: "quicksite",  group: "Abbott", label: "QuickSite (bipolar)", models: "1056T / 1056K / 1058T", vectors: allPairings(BIPOLAR) },
 
   /* ---- Boston Scientific ---- */
-  { id: "acuityx4",   group: "Boston Scientific", label: "ACUITY X4 (Straight / Spiral S / Spiral L)", vectors: allPairings(QUAD) },
-  { id: "acuityspir", group: "Boston Scientific", label: "ACUITY Spiral (bipolar)", vectors: allPairings(BIPOLAR) },
-  { id: "acuitysteer",group: "Boston Scientific", label: "ACUITY Steerable (bipolar)", vectors: allPairings(BIPOLAR) },
-  { id: "easytrak",   group: "Boston Scientific", label: "EASYTRAK 2 / 3 (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "acuityx4",   group: "Boston Scientific", label: "ACUITY X4 (Straight / Spiral S / Spiral L)", models: "4671 / 4674 / 4677", vectors: allPairings(QUAD) },
+  { id: "acuityspir", group: "Boston Scientific", label: "ACUITY Spiral (bipolar)", models: "", vectors: allPairings(BIPOLAR) },
+  { id: "acuitysteer",group: "Boston Scientific", label: "ACUITY Steerable (bipolar)", models: "", vectors: allPairings(BIPOLAR) },
+  { id: "easytrak",   group: "Boston Scientific", label: "EASYTRAK 2 / 3 (bipolar)", models: "", vectors: allPairings(BIPOLAR) },
 
   /* ---- Medtronic ---- */
-  { id: "performa",   group: "Medtronic", label: "Attain Performa (Straight / S-shape / Spiral)", vectors: allPairings(QUAD) },
-  { id: "stabquad",   group: "Medtronic", label: "Attain Stability Quad (active fixation)", vectors: allPairings(QUAD) },
-  { id: "ability",    group: "Medtronic", label: "Attain Ability / Ability Plus (bipolar)", vectors: allPairings(BIPOLAR) },
-  { id: "attainotw",  group: "Medtronic", label: "Attain Bipolar OTW (bipolar)", vectors: allPairings(BIPOLAR) },
-  { id: "starfix",    group: "Medtronic", label: "Attain StarFix (bipolar, active fixation)", vectors: allPairings(BIPOLAR) },
-  { id: "stability",  group: "Medtronic", label: "Attain Stability (bipolar, active fixation)", vectors: allPairings(BIPOLAR) },
+  { id: "performa",   group: "Medtronic", label: "Attain Performa (Straight / S-shape / Spiral)", models: "4298 / 4398 / 4598", vectors: allPairings(QUAD) },
+  { id: "stabquad",   group: "Medtronic", label: "Attain Stability Quad (active fixation)", models: "4798", vectors: allPairings(QUAD) },
+  { id: "ability",    group: "Medtronic", label: "Attain Ability / Ability Plus (bipolar)", models: "4196 / 4296 / 4396", vectors: allPairings(BIPOLAR) },
+  { id: "attainotw",  group: "Medtronic", label: "Attain Bipolar OTW (bipolar)", models: "4193 / 4194", vectors: allPairings(BIPOLAR) },
+  { id: "starfix",    group: "Medtronic", label: "Attain StarFix (bipolar, active fixation)", models: "4195", vectors: allPairings(BIPOLAR) },
+  { id: "stability",  group: "Medtronic", label: "Attain Stability (bipolar, active fixation)", models: "20066", vectors: allPairings(BIPOLAR) },
 
   /* ---- Biotronik ---- */
-  { id: "sentusqp",   group: "Biotronik", label: "Sentus QP (OTW-QP L / S)", vectors: allPairings(QUAD) },
-  { id: "sentusbp",   group: "Biotronik", label: "Sentus BP (bipolar)", vectors: allPairings(BIPOLAR) },
-  { id: "corox",      group: "Biotronik", label: "Corox OTW BP / OTW-S BP (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "sentusqp",   group: "Biotronik", label: "Sentus QP (OTW-QP L / S)", models: "", vectors: allPairings(QUAD) },
+  { id: "sentusbp",   group: "Biotronik", label: "Sentus BP (bipolar)", models: "", vectors: allPairings(BIPOLAR) },
+  { id: "corox",      group: "Biotronik", label: "Corox OTW BP / OTW-S BP (bipolar)", models: "", vectors: allPairings(BIPOLAR) },
 
   /* ---- MicroPort CRM (formerly LivaNova / Sorin) ---- */
-  { id: "situsqp",    group: "MicroPort CRM", label: "Situs QP (quadripolar)", vectors: allPairings(QUAD) },
-  { id: "situsbp",    group: "MicroPort CRM", label: "Situs OTW BP (bipolar)", vectors: allPairings(BIPOLAR) },
+  { id: "situsqp",    group: "MicroPort CRM", label: "Situs QP (quadripolar)", models: "", vectors: allPairings(QUAD) },
+  { id: "situsbp",    group: "MicroPort CRM", label: "Situs OTW BP (bipolar)", models: "", vectors: allPairings(BIPOLAR) },
 
   /* ---- Geometry-only fallbacks for anything not named above ---- */
   { id: "genericquad", group: "Generic", label: "Any quadripolar LV lead (LV1–LV4)", vectors: allPairings(QUAD) },
@@ -668,9 +779,9 @@ function positionStatus(v, p) {
 /* ================================================================ RENDER */
 
 function render() {
-  renderPresetOptions();
+  buildPresetList();
   document.getElementById("capture-id-note").textContent = state.captureId;
-  document.getElementById("lead-preset").value = state.preset;
+  setPresetDisplay();
   document.getElementById("lead-model").value = state.leadModel;
   document.getElementById("generator").value = state.generator;
   document.getElementById("tag").value = state.tag;
@@ -681,24 +792,110 @@ function render() {
   syncPositionButtons();
 }
 
+function leadById(id) {
+  return LEAD_LIBRARY.filter(function (x) { return x.id === id; })[0] || null;
+}
+
 /* Grouped by manufacturer: the list is long enough that a flat one is unusable on a phone,
-   and the grouping is how you find your lead when you know the vendor but not the model. */
-function renderPresetOptions() {
-  var sel = document.getElementById("lead-preset");
-  if (sel.options.length) return;
-  var groups = {};
+   and the grouping is how you find your lead when you know the vendor but not the model.
+   Two lines per row for the same reason — half the time the programmer shows the number and
+   not the name, so the number has to be findable here without knowing which name owns it. */
+function buildPresetList() {
+  var list = document.getElementById("lead-preset-list");
+  if (list.firstChild) return;
+  var lastGroup = "";
   LEAD_LIBRARY.forEach(function (L) {
-    if (!groups[L.group]) {
-      groups[L.group] = document.createElement("optgroup");
-      groups[L.group].label = L.group;
-      sel.appendChild(groups[L.group]);
+    if (L.group !== lastGroup) {
+      lastGroup = L.group;
+      var h = document.createElement("div");
+      h.className = "pk-group";
+      h.setAttribute("role", "presentation");   // a listbox may only own options
+      h.textContent = L.group;
+      list.appendChild(h);
     }
-    var o = document.createElement("option");
-    o.value = L.id;
-    o.textContent = L.label + (L.vectors.length ? "  (" + L.vectors.length + ")" : "");
-    groups[L.group].appendChild(o);
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "pk-opt";
+    b.setAttribute("role", "option");
+    b.dataset.id = L.id;
+    b.onclick = function () { choosePreset(L.id); };
+
+    var tick = document.createElement("span");
+    tick.className = "pk-tick";
+    b.appendChild(tick);
+
+    var txt = document.createElement("span");
+    txt.className = "pk-text";
+    var name = document.createElement("span");
+    name.className = "pk-name";
+    name.textContent = L.label;
+    txt.appendChild(name);
+    var num = document.createElement("span");
+    num.className = "pk-num";
+    num.textContent = L.models || "";
+    txt.appendChild(num);
+    b.appendChild(txt);
+
+    if (L.vectors.length) {
+      var c = document.createElement("span");
+      c.className = "pk-count";
+      c.textContent = L.vectors.length;
+      c.title = L.vectors.length + " vectors";
+      b.appendChild(c);
+    }
+    list.appendChild(b);
   });
 }
+
+/* The button mirrors a row of the list: name on top, numbers underneath. */
+function setPresetDisplay() {
+  var L = leadById(state.preset) || leadById("manual");
+  document.getElementById("lead-preset-name").textContent = L ? L.label : "";
+  document.getElementById("lead-preset-num").textContent = (L && L.models) || "";
+}
+
+function openPresetList() {
+  buildPresetList();
+  var list = document.getElementById("lead-preset-list");
+  var opts = list.querySelectorAll(".pk-opt"), i, sel = null;
+  for (i = 0; i < opts.length; i++) {
+    var on = opts[i].dataset.id === state.preset;
+    opts[i].setAttribute("aria-selected", on ? "true" : "false");
+    opts[i].classList.toggle("is-active", on);
+    opts[i].firstChild.textContent = on ? "\u2713" : "";
+    if (on) sel = opts[i];
+  }
+  document.getElementById("lead-preset-modal").hidden = false;
+  document.getElementById("lead-preset-btn").setAttribute("aria-expanded", "true");
+  if (sel) sel.scrollIntoView({ block: "center" });
+  (sel || opts[0]).focus();
+}
+
+function closePresetList() {
+  document.getElementById("lead-preset-modal").hidden = true;
+  var btn = document.getElementById("lead-preset-btn");
+  btn.setAttribute("aria-expanded", "false");
+  btn.focus();
+}
+
+function presetListOpen() { return !document.getElementById("lead-preset-modal").hidden; }
+
+/* Arrow keys walk the rows, Esc backs out. Enter and Space are the button's own doing. */
+function onPresetKey(e) {
+  if (!presetListOpen()) return;
+  if (e.key === "Escape") { e.preventDefault(); closePresetList(); return; }
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  e.preventDefault();
+  var opts = document.querySelectorAll("#lead-preset-list .pk-opt");
+  var at = -1, i;
+  for (i = 0; i < opts.length; i++) if (opts[i] === document.activeElement) at = i;
+  var next = at < 0 ? 0 : at + (e.key === "ArrowDown" ? 1 : -1);
+  if (next < 0) next = opts.length - 1;
+  if (next >= opts.length) next = 0;
+  opts[next].focus();
+  opts[next].scrollIntoView({ block: "nearest" });
+}
+document.addEventListener("keydown", onPresetKey);
 
 function renderVectors() {
   var list = document.getElementById("vec-list");
@@ -957,18 +1154,17 @@ function syncPositionButtons() {
   document.getElementById("pos-sitting").setAttribute("aria-pressed", position === "sitting" ? "true" : "false");
 }
 
-function onPresetChange() {
-  var id = document.getElementById("lead-preset").value;
-  var L = LEAD_LIBRARY.filter(function (x) { return x.id === id; })[0];
+function choosePreset(id) {
+  var L = leadById(id);
   if (!L) return;
+  closePresetList();
+  if (id === state.preset) return;
 
   var hasData = state.vectors.some(hasAnyData);
-  if (hasData && !confirm("Replace the current vector list? Measurements already entered will be lost.")) {
-    document.getElementById("lead-preset").value = state.preset;
-    return;
-  }
+  if (hasData && !confirm("Replace the current vector list? Measurements already entered will be lost.")) return;
 
   state.preset = id;
+  setPresetDisplay();
   state.vectors = L.vectors.map(function (pair) { return newVector(pair[0], pair[1]); });
   state.finalVectorId = "";
   markDirty(); renderVectors(); renderFinalOptions(); renderCompare();
@@ -1004,7 +1200,6 @@ function newSession() {
   position = "sitting";
   outMode = null;
   document.getElementById("out").textContent = "Press “Text report” or “JSON”.";
-  document.getElementById("lead-preset").value = "manual";
   render();
   toast("New capture started");
 }
@@ -1201,7 +1396,7 @@ function buildText() {
 }
 
 function presetLabel(id) {
-  var L = LEAD_LIBRARY.filter(function (x) { return x.id === id; })[0];
+  var L = leadById(id);
   if (!L || L.id === "manual") return "";
   /* The manufacturer is the optgroup, not part of the label — put it back for the report. */
   return (L.group === "Generic" ? "" : L.group + " ") + L.label;
