@@ -141,25 +141,27 @@
       overflow-wrap:break-word; overflow:hidden; }
   /* Uploaded-to-Cerner marker between Remote and Files — centered within its column.
      Custom-styled to match the dark form fields: an empty rounded square that fills with the
-     theme green (same "done" green used elsewhere) and shows a checkmark when ticked. */
+     theme green (same "done" green used elsewhere) and shows a checkmark when ticked.
+     The reminder list's "done" boxes share these rules, so a tick means the same thing
+     and looks the same wherever it appears on the page. */
   th.cerner, td.cerner { text-align:center; }
   td.cerner { vertical-align:middle; }
-  td.cerner input[type=checkbox] {
+  td.cerner input[type=checkbox], .rem-item input[type=checkbox] {
     -webkit-appearance:none; appearance:none; margin:0; padding:0;
     width:18px; height:18px; box-sizing:border-box; cursor:pointer; vertical-align:middle;
     background:var(--panel2); border:1px solid var(--border); border-radius:5px;
     display:inline-grid; place-content:center;
     transition:background-color .12s ease, border-color .12s ease;
   }
-  td.cerner input[type=checkbox]::before {
+  td.cerner input[type=checkbox]::before, .rem-item input[type=checkbox]::before {
     content:""; width:11px; height:11px; transform:scale(0); transform-origin:center;
     transition:transform .12s ease-in-out; background-color:#04121f;
     clip-path:polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
   }
-  td.cerner input[type=checkbox]:hover { border-color:var(--accent); }
-  td.cerner input[type=checkbox]:checked { background:var(--green); border-color:var(--green); }
-  td.cerner input[type=checkbox]:checked::before { transform:scale(1); }
-  td.cerner input[type=checkbox]:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  td.cerner input[type=checkbox]:hover, .rem-item input[type=checkbox]:hover { border-color:var(--accent); }
+  td.cerner input[type=checkbox]:checked, .rem-item input[type=checkbox]:checked { background:var(--green); border-color:var(--green); }
+  td.cerner input[type=checkbox]:checked::before, .rem-item input[type=checkbox]:checked::before { transform:scale(1); }
+  td.cerner input[type=checkbox]:focus-visible, .rem-item input[type=checkbox]:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   td.del { width:30px; text-align:center; }
   td.del button { border:none; background:none; color:var(--muted); font-size:1rem; padding:2px 4px; }
   td.del button:hover { color:var(--red); }
@@ -290,6 +292,34 @@
     .all-time { width:64px; }
     .all-pt { width:110px; }
   }
+
+  /* ---------- Reminders: the running to-do list under the schedule ----------
+     Deliberately NOT a per-day list. Reminders live at state.reminders — outside state.dates —
+     so stepping to another date never hides an outstanding task, and the Memory retention
+     window, which only ever prunes state.dates, can never quietly delete one. */
+  #remCounts { text-transform:none; letter-spacing:.02em; font-size:.76rem; }
+  .rem-add { display:flex; gap:8px; margin-bottom:10px; }
+  #remInput { flex:1 1 auto; min-width:0; background:var(--panel2); border:1px solid var(--border);
+              color:var(--text); border-radius:8px; padding:8px 10px; font:inherit; font-size:.9rem; }
+  #remInput:focus { outline:2px solid var(--accent); }
+  .rem-add button { flex:0 0 auto; }
+  .rem-list { list-style:none; }
+  .rem-item { display:flex; align-items:flex-start; gap:9px; margin-bottom:5px; padding:7px 9px;
+              background:var(--panel2); border:1px solid var(--border); border-radius:8px; }
+  .rem-item:hover { border-color:var(--accent); }
+  .rem-item input[type=checkbox] { flex:0 0 auto; margin-top:2px; }
+  /* The text is editable in place — a follow-up gets rewritten far more often than it gets
+     retyped — and auto-grows like the schedule's notes so a long reminder is never clipped. */
+  .rem-text { flex:1 1 auto; min-width:0; background:none; border:none; color:var(--text);
+              font:inherit; font-size:.86rem; line-height:1.35; padding:0; resize:none;
+              overflow:hidden; white-space:pre-wrap; overflow-wrap:break-word; }
+  .rem-text:focus { outline:none; }
+  .rem-item.done .rem-text { color:var(--muted); text-decoration:line-through; }
+  .rem-when { flex:0 0 auto; color:var(--muted); font-size:.7rem; white-space:nowrap; padding-top:2px; }
+  .rem-del { flex:0 0 auto; border:none; background:none; color:var(--muted); font-size:1rem; padding:0 3px; }
+  .rem-del:hover { color:var(--red); }
+  .rem-empty { color:var(--muted); font-size:.84rem; padding:3px 2px; }
+  .rem-foot { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:10px; }
 
   /* ---------- print: clean white formatted schedule ---------- */
   @media print {
@@ -428,6 +458,20 @@
     <button class="danger" onclick="clearDay()">Clear this day</button>
   </div>
 </div>
+
+<div class="panel" id="remPanel">
+  <h2>Reminders<span id="remCounts"></span></h2>
+  <div class="rem-add">
+    <input id="remInput" type="text" maxlength="300" aria-label="New reminder"
+           placeholder="Call Doe, Jane about her ERI battery &mdash; tell Dr. Smith Roe, John stopped his blood thinners&hellip;">
+    <button class="primary" onclick="addReminder()">+ Add reminder</button>
+  </div>
+  <ul id="remList" class="rem-list"></ul>
+  <div class="rem-foot">
+    <label class="mem-opt"><input type="checkbox" id="remShowDone"><span>Show completed</span></label>
+    <button class="danger" onclick="clearDoneReminders()">Clear completed</button>
+  </div>
+</div>
 </div>
 
 <div id="allModal" class="modal-overlay">
@@ -472,7 +516,7 @@
     d = d || new Date();
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
-  function blank() { return { type: "patient-schedule", version: 1, providers: ["Tech"], dates: {} }; }
+  function blank() { return { type: "patient-schedule", version: 1, providers: ["Tech"], dates: {}, reminders: [] }; }
   function normalize(s) {
     if (!s || typeof s !== "object" || Array.isArray(s)) return blank();
     if (!s.dates || typeof s.dates !== "object") s.dates = {};
@@ -481,6 +525,15 @@
     return s;
   }
   function migrate(s) { // renames/new fields from older saves
+    // Reminders, added Aug 2026. A database written before then simply has none; anything that is
+    // not a well-formed entry is dropped rather than rendered, so a hand-edited or half-written
+    // schedule.json can't put junk (or an object where a string belongs) into the list.
+    if (!Array.isArray(s.reminders)) s.reminders = [];
+    s.reminders = s.reminders.filter(function (m) { return m && typeof m === "object" && !Array.isArray(m); })
+      .map(function (m) {
+        return { id: String(m.id || "") || newRemId(), text: String(m.text == null ? "" : m.text),
+                 done: !!m.done, created: Number(m.created) || 0, doneAt: Number(m.doneAt) || 0 };
+      });
     if (!Array.isArray(s.providers)) s.providers = ["Tech"];
     s.providers = s.providers.map(function (p) { return String(p || "").trim(); }).filter(function (p, i, all) {
       return p && all.findIndex(function (x) { return x.toLowerCase() === p.toLowerCase(); }) === i;
@@ -830,6 +883,9 @@
     });
     tb.querySelectorAll("td.notes-cell textarea").forEach(autoGrow);   // size each note to its content
     renderCounts();
+    // Reminders aren't date-scoped, but render() is also what runs after a database load or another
+    // tab's state arrives — so the list is rebuilt here too, or it would show the previous copy.
+    renderReminders();
     scanSlots();
   }
   function autoGrow(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 220) + "px"; }
@@ -898,6 +954,129 @@
     curDate = localISO(dt);
     render();
   };
+
+  /* ---------- Reminders ----------
+     A running list of follow-ups ("Call Doe, Jane about her ERI battery"). It belongs to the
+     DATABASE rather than to a day: it rides in the same schedule.json as the appointments, so it
+     travels between stations with everything else, but it sits outside state.dates so neither
+     date navigation nor the retention window can hide or delete an outstanding task. */
+  var REM_SHOWDONE_KEY = "patientSchedRemShowDoneV1";   // UI preference only — no PHI
+  var remShowDone = true;
+  try { remShowDone = localStorage.getItem(REM_SHOWDONE_KEY) !== "0"; } catch (e) {}
+
+  function reminders() { if (!Array.isArray(state.reminders)) state.reminders = []; return state.reminders; }
+  function newRemId() { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); }
+  function remById(id) {
+    var list = reminders();
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  // Outstanding reminders keep the order they were written in; finished ones sink to the bottom,
+  // most recently ticked first — so the list reads as "still to do" followed by "just done".
+  function sortedReminders() {
+    return reminders().map(function (m, i) { return { m: m, i: i }; }).sort(function (a, b) {
+      if (!a.m.done !== !b.m.done) return a.m.done ? 1 : -1;
+      if (a.m.done) return (b.m.doneAt || 0) - (a.m.doneAt || 0);
+      return a.i - b.i;
+    }).map(function (x) { return x.m; });
+  }
+  // How long a follow-up has been sitting there. Today's are unlabelled — the label exists to make
+  // an ageing reminder obvious, and stamping "today" on every fresh one would just add noise.
+  function remAge(m) {
+    if (!m.created) return "";
+    var made = localISO(new Date(m.created));
+    if (made === localISO()) return "";
+    var days = Math.round((Date.parse(localISO() + "T00:00:00") - Date.parse(made + "T00:00:00")) / 86400000);
+    if (days === 1) return "yesterday";
+    if (days > 1 && days < 7) return days + "d ago";
+    return new Date(m.created).toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+  function remTitle(m) {
+    var parts = [];
+    if (m.created) parts.push("Added " + new Date(m.created).toLocaleString());
+    if (m.done && m.doneAt) parts.push("Done " + new Date(m.doneAt).toLocaleString());
+    return parts.join(" \u00b7 ");
+  }
+  function renderReminders() {
+    var box = $("remList");
+    if (!box) return;
+    var openN = 0, doneN = 0;
+    reminders().forEach(function (m) { m.done ? doneN++ : openN++; });
+    var shown = sortedReminders().filter(function (m) { return remShowDone || !m.done; });
+    box.innerHTML = shown.length ? shown.map(function (m) {
+      return '<li class="rem-item' + (m.done ? " done" : "") + '" data-rem="' + esc(m.id) + '">' +
+        '<input type="checkbox" data-rem-done title="Mark done" aria-label="Mark reminder done"' + (m.done ? " checked" : "") + ">" +
+        '<textarea rows="1" class="rem-text" data-rem-text aria-label="Reminder">' + esc(m.text) + "</textarea>" +
+        '<span class="rem-when" title="' + esc(remTitle(m)) + '">' + esc(remAge(m)) + "</span>" +
+        '<button type="button" class="rem-del" data-rem-del title="Remove reminder" aria-label="Remove reminder">&#10005;</button>' +
+      "</li>";
+    }).join("") : '<li class="rem-empty">' + (
+      reminders().length
+        ? "All caught up &mdash; " + doneN + " completed reminder" + (doneN === 1 ? "" : "s") + " hidden."
+        : "No reminders yet &mdash; add anything you need to follow up on."
+    ) + "</li>";
+    box.querySelectorAll("textarea.rem-text").forEach(autoGrow);
+    $("remCounts").textContent = (openN || doneN)
+      ? openN + " to do" + (doneN ? " \u00b7 " + doneN + " done" : "")
+      : "";
+    var sd = $("remShowDone");
+    if (sd) sd.checked = remShowDone;
+  }
+  window.addReminder = function () {
+    var input = $("remInput");
+    var text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    reminders().push({ id: newRemId(), text: text, done: false, created: Date.now(), doneAt: 0 });
+    input.value = "";
+    save(); renderReminders();
+    input.focus();   // the next follow-up usually comes right behind the last one
+  };
+  window.clearDoneReminders = function () {
+    var done = reminders().filter(function (m) { return m.done; }).length;
+    if (!done) return;
+    if (!confirm("Remove " + done + " completed reminder" + (done === 1 ? "" : "s") + "?")) return;
+    state.reminders = reminders().filter(function (m) { return !m.done; });
+    save(); renderReminders();
+  };
+  $("remInput").addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") { ev.preventDefault(); window.addReminder(); }
+  });
+  $("remShowDone").addEventListener("change", function () {
+    remShowDone = this.checked;
+    try { localStorage.setItem(REM_SHOWDONE_KEY, remShowDone ? "1" : "0"); } catch (e) {}
+    renderReminders();
+  });
+  // Editing in place: save the text but do NOT re-render, or the rebuild would take the caret
+  // out of the box mid-sentence (same reason the schedule's notes field doesn't re-render).
+  $("remList").addEventListener("input", function (ev) {
+    var el = ev.target;
+    if (!el.matches || !el.matches("textarea[data-rem-text]")) return;
+    var m = remById(el.closest(".rem-item").dataset.rem);
+    if (!m) return;
+    m.text = el.value;
+    autoGrow(el);
+    save();
+  });
+  $("remList").addEventListener("change", function (ev) {
+    var el = ev.target;
+    if (!el.matches || !el.matches("input[data-rem-done]")) return;
+    var m = remById(el.closest(".rem-item").dataset.rem);
+    if (!m) return;
+    m.done = el.checked;
+    m.doneAt = el.checked ? Date.now() : 0;
+    save(); renderReminders();   // ticked items re-sort to the bottom
+  });
+  $("remList").addEventListener("click", function (ev) {
+    var b = ev.target.closest("button[data-rem-del]");
+    if (!b) return;
+    var m = remById(b.closest(".rem-item").dataset.rem);
+    if (!m) return;
+    // Only a reminder with something written on it that is still outstanding is worth a prompt;
+    // ticking one off and clearing it away should stay a single tap.
+    if (m.text.trim() && !m.done && !confirm("Remove this reminder?\n\n" + m.text.trim())) return;
+    state.reminders = reminders().filter(function (x) { return x !== m; });
+    save(); renderReminders();
+  });
 
   /* ---------- All-patients overview (every appointment across all dates) ---------- */
   function fmtDateLong(iso) {
