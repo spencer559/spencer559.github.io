@@ -56,6 +56,17 @@ body { font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: 
 .btn-danger:hover { background: #fdf0f0; }
 .btn:disabled { background: #eef1f5; color: #aab; border-color: var(--border); cursor: default; filter: none; }
 .btn.db-locked { background:#fff4df; color:#8a4b00; border-color:#d99a43; }
+/* "Done" tick beside Files — a label, not a button, so the whole chip is the hit target on the
+   iPad, wearing the .btn shell so it lines up with the buttons either side of it. It reflects the
+   schedule row's Done column: ticking here ticks there, and vice versa. Disabled state is drawn
+   by class rather than :disabled, which a <label> can't carry. */
+.done-toggle { gap: 6px; line-height: normal; user-select: none; -webkit-user-select: none; }
+/* 11px keeps the label exactly as tall as the buttons it sits between; the whole chip is the
+   tap target, so the box itself doesn't have to be. */
+.done-toggle input { width: 11px; height: 11px; margin: 0; accent-color: var(--green); cursor: pointer; }
+.done-toggle.is-done { background: #e9f4ed; color: var(--green); border-color: #9ccdae; }
+.done-toggle.is-disabled { background: #eef1f5; color: #aab; cursor: default; }
+.done-toggle.is-disabled input { cursor: default; }
 
 /* A scheduled-patient handoff must not quietly become an unlinked blank report. */
 .db-handoff-guard {
@@ -333,6 +344,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
       <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
       Schedule
     </button>
+    <label class="btn btn-ghost done-toggle is-disabled" id="done-toggle" title="Pick a patient (Patient List) to mark their report done"><input type="checkbox" id="report-done" disabled>Done</label>
     <button class="btn btn-ghost" id="files-btn" onclick="toggleFilesMenu(event)" disabled title="This patient's saved files — open the programmer report while you fill in the rest">Files <svg width="8" height="8" viewBox="0 0 10 10" fill="none" style="margin-left:1px"><path d="M2 4l3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <button class="btn btn-ghost app-menu-btn" id="menu-btn" onclick="toggleMainMenu(event)" aria-haspopup="menu" aria-expanded="false" aria-label="More actions" title="Export, import and form actions">
       <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -3463,16 +3475,34 @@ window.ensureReportPdfBuilder = function () {
     syncEl.textContent = msg;
   }
 
-  /* ---- app-bar button state: the only dynamic control here is the patient Files button. ---- */
+  /* ---- app-bar button state: the dynamic controls here are both per-patient — the Files
+         menu and the Done tick. Neither means anything without a selected slot. ---- */
   function dbIsOpen() { return !!slotRoot || !!(WS && WS.isOpen && WS.isOpen()); }
   function updateFilesBtn() {
-    var f = document.getElementById('files-btn'); if (!f) return;
+    var f = document.getElementById('files-btn');
     // Files are per-patient, so this needs a selected slot, not merely an open database.
     var ready = dbIsOpen() && !!slotName;
-    f.disabled = !ready;
-    f.title = ready
-      ? "This patient's saved files — open the programmer report while you fill in the rest"
-      : 'Pick a patient (Patient List) to see their files';
+    if (f) {
+      f.disabled = !ready;
+      f.title = ready
+        ? "This patient's saved files — open the programmer report while you fill in the rest"
+        : 'Pick a patient (Patient List) to see their files';
+    }
+    updateDoneToggle(ready);
+  }
+  // The tick lives on the schedule row, so it needs the same selected slot the Files menu does.
+  // Unticked-and-disabled is the honest resting state: with no patient open there is no report
+  // whose doneness we could be showing.
+  function updateDoneToggle(ready) {
+    var box = document.getElementById('report-done'), wrap = document.getElementById('done-toggle');
+    if (!box || !wrap) return;
+    box.disabled = !ready;
+    if (!ready) box.checked = false;
+    wrap.classList.toggle('is-disabled', !ready);
+    wrap.classList.toggle('is-done', !!box.checked);
+    wrap.title = ready
+      ? "Mark this patient's report finished — the tick shows in the Schedule's Done column"
+      : 'Pick a patient (Patient List) to mark their report done';
   }
   // Navigate to the Schedule only AFTER the working copy is flushed, so the files just
   // written here are guaranteed to be in the shared bundle the Schedule page reads.
@@ -3709,7 +3739,8 @@ window.ensureReportPdfBuilder = function () {
 
   /* ---- Schedule prechart data ---------------------------------------------------------------
      The schedule's Last Office date is displayed in the always-visible app bar. Its "Remote"
-     precharting column and this page's Final Session Summary status dropdown are the same field.
+     precharting column and this page's Final Session Summary status dropdown are the same field,
+     and its "Done" column is the app-bar Done tick.
      schedule.json inside the .crmdb holds both values, so one row read supplies both:
        · opening a patient displays a filled Last Office date in the app bar,
        · opening a patient pulls its scheduled value into the form, and
@@ -3721,6 +3752,7 @@ window.ensureReportPdfBuilder = function () {
   try { if (typeof BroadcastChannel !== 'undefined') schedChannel = new BroadcastChannel('patientScheduleSyncV1'); } catch (e) {}
 
   function rmStatusEl() { return document.getElementById('rm-status'); }
+  function doneEl() { return document.getElementById('report-done'); }
   function readSchedule() {
     if (!slotRoot) return Promise.reject(new Error('no database'));
     return slotRoot.getFileHandle('schedule.json')
@@ -3753,6 +3785,10 @@ window.ensureReportPdfBuilder = function () {
       if (slotKey() !== expectedSlot) return; // patient changed while schedule.json was being read
       var row = scheduleRowFor(sched, slotDate, slotName);
       setLastOfficeBanner(row && row.lastOff);
+      // The tick is the schedule's to own — a row that has never been marked done reads as
+      // not done, and a patient with no row at all can't be marked at all.
+      var box = doneEl();
+      if (box) { box.checked = !!(row && row.done); updateDoneToggle(!box.disabled); }
       if (!row) return;
       var fromSched = String(row.rm || '');
       if (fromSched) {
@@ -3770,15 +3806,17 @@ window.ensureReportPdfBuilder = function () {
   }
   // Form → schedule, on change. Stages schedule.json the same way the schedule page does
   // (deferred write + flush), then bumps the revision so an open schedule tab treats this as
-  // newer than its own copy instead of putting the old value straight back.
-  function pushRmToSchedule() {
-    var el = rmStatusEl();
-    if (!el || !slotRoot || !slotDate || !slotName) return Promise.resolve();
-    var v = el.value || '';
+  // newer than its own copy instead of putting the old value straight back. Both row fields this
+  // page owns — the precharted RM status and the Done tick — write back through here.
+  function pushRowField(field, value) {
+    if (!slotRoot || !slotDate || !slotName) return Promise.resolve();
     return readSchedule().then(function (sched) {
       var row = scheduleRowFor(sched, slotDate, slotName);
-      if (!row || String(row.rm || '') === v) return;   // not on the schedule, or already agrees
-      row.rm = v;
+      if (!row) return;                                  // not on the schedule
+      var same = (typeof value === 'boolean') ? (!!row[field] === value)
+                                              : (String(row[field] || '') === value);
+      if (same) return;                                  // already agrees
+      row[field] = value;
       sched._updatedAt = Math.max(Date.now(), Number(sched._updatedAt || 0) + 1);
       sched._updatedBy = RG_TAB_ID;
       var text = JSON.stringify(sched, null, 2);
@@ -3794,15 +3832,35 @@ window.ensureReportPdfBuilder = function () {
         });
     }).catch(function () {});
   }
+  function pushRmToSchedule() {
+    var el = rmStatusEl();
+    if (!el) return Promise.resolve();
+    return pushRowField('rm', el.value || '');
+  }
+  // The tick is schedule state only — it says nothing about the report's contents, so it is
+  // deliberately not part of the form data and does not mark the report dirty.
+  function pushDoneToSchedule() {
+    var el = doneEl();
+    if (!el) return Promise.resolve();
+    return pushRowField('done', !!el.checked);
+  }
   (function () {
     var el = rmStatusEl();
     if (el) el.addEventListener('change', function () { pushRmToSchedule(); });
+    var box = doneEl();
+    if (box) box.addEventListener('change', function () {
+      updateDoneToggle(!box.disabled);
+      pushDoneToSchedule();
+    });
   })();
 
   /* ---- open a patient slot ---- */
   function openSlot(dt, slot, label, allowReset) {
     slotDate = dt; slotName = slot; slotLabel = (label || '').trim();
     setLastOfficeBanner('');
+    // Blank the banner and the tick for the incoming patient; pullRmFromSchedule below fills
+    // both in from their row. Leaving the last patient's tick up would be a lie in the meantime.
+    (function () { var b = doneEl(); if (b) { b.checked = false; updateDoneToggle(!b.disabled); } })();
     setPatientBtn();
     disarm();
     if (!slotRoot) { toast('Connect the USB workspace (Patient List) to load this patient.', 'err'); return; }

@@ -139,29 +139,32 @@
   /* Notes uses the whole table width; the spacer keeps the header controls themselves compact. */
   td.notes-cell textarea { resize:vertical; min-height:28px; line-height:1.3; white-space:pre-wrap;
       overflow-wrap:break-word; overflow:hidden; }
-  /* Uploaded-to-Cerner marker between Remote and Files — centered within its column.
+  /* Two per-appointment ticks between Remote and CRM: Done (the report itself is finished)
+     and Cerner (it has been entered into the chart) — in the order the work happens. Done is
+     also the app-bar tick in the Report Generator; they are one field on the row.
+     Centered within their columns.
      Custom-styled to match the dark form fields: an empty rounded square that fills with the
      theme green (same "done" green used elsewhere) and shows a checkmark when ticked.
      The reminder list's "done" boxes share these rules, so a tick means the same thing
      and looks the same wherever it appears on the page. */
-  th.cerner, td.cerner { text-align:center; }
-  td.cerner { vertical-align:middle; }
-  td.cerner input[type=checkbox], .rem-item input[type=checkbox] {
+  th.cerner, td.cerner, th.done, td.done { text-align:center; }
+  td.cerner, td.done { vertical-align:middle; }
+  td.cerner input[type=checkbox], td.done input[type=checkbox], .rem-item input[type=checkbox] {
     -webkit-appearance:none; appearance:none; margin:0; padding:0;
     width:18px; height:18px; box-sizing:border-box; cursor:pointer; vertical-align:middle;
     background:var(--panel2); border:1px solid var(--border); border-radius:5px;
     display:inline-grid; place-content:center;
     transition:background-color .12s ease, border-color .12s ease;
   }
-  td.cerner input[type=checkbox]::before, .rem-item input[type=checkbox]::before {
+  td.cerner input[type=checkbox]::before, td.done input[type=checkbox]::before, .rem-item input[type=checkbox]::before {
     content:""; width:11px; height:11px; transform:scale(0); transform-origin:center;
     transition:transform .12s ease-in-out; background-color:#04121f;
     clip-path:polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
   }
-  td.cerner input[type=checkbox]:hover, .rem-item input[type=checkbox]:hover { border-color:var(--accent); }
-  td.cerner input[type=checkbox]:checked, .rem-item input[type=checkbox]:checked { background:var(--green); border-color:var(--green); }
-  td.cerner input[type=checkbox]:checked::before, .rem-item input[type=checkbox]:checked::before { transform:scale(1); }
-  td.cerner input[type=checkbox]:focus-visible, .rem-item input[type=checkbox]:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  td.cerner input[type=checkbox]:hover, td.done input[type=checkbox]:hover, .rem-item input[type=checkbox]:hover { border-color:var(--accent); }
+  td.cerner input[type=checkbox]:checked, td.done input[type=checkbox]:checked, .rem-item input[type=checkbox]:checked { background:var(--green); border-color:var(--green); }
+  td.cerner input[type=checkbox]:checked::before, td.done input[type=checkbox]:checked::before, .rem-item input[type=checkbox]:checked::before { transform:scale(1); }
+  td.cerner input[type=checkbox]:focus-visible, td.done input[type=checkbox]:focus-visible, .rem-item input[type=checkbox]:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   td.del { width:30px; text-align:center; }
   td.del button { border:none; background:none; color:var(--muted); font-size:1rem; padding:2px 4px; }
   td.del button:hover { color:var(--red); }
@@ -442,6 +445,7 @@
         <th style="width:88px">Check type</th>
         <th style="width:118px">Last office</th>
         <th style="width:116px">Remote</th>
+        <th class="done" style="width:54px" title="Mark once this patient's report is finished — also ticked from inside the report">Done</th>
         <th class="cerner" style="width:60px" title="Mark once this patient has been entered into Cerner">Cerner</th>
         <th class="crm-head" style="width:54px">CRM</th>
         <th class="files-head" style="width:92px">Files</th>
@@ -545,6 +549,7 @@
         if (r.rm === "Needs setup") r.rm = "External clinic";
         if (r.lastOff === undefined) r.lastOff = ""; // added Jul 2026
         if (r.cerner === undefined) r.cerner = false; // "Uploaded to Cerner", added Jul 2026
+        if (r.done === undefined) r.done = false;     // "Report finished", added Sep 2026
         r.provider = String(r.provider || "Tech").trim() || "Tech"; // provider assignment added Jul 2026
         if (!s.providers.some(function (p) { return p.toLowerCase() === r.provider.toLowerCase(); })) s.providers.push(r.provider);
       });
@@ -862,6 +867,7 @@
         '<td><select data-i="' + i + '" data-f="check">' + opts(CHECKS, r.check) + "</select></td>" +
         '<td class="lo"><input type="date" title="Date of the last in-office check" data-i="' + i + '" data-f="lastOff" value="' + esc(r.lastOff) + '"></td>' +
         '<td><select data-i="' + i + '" data-f="rm" title="Remote monitoring connection status">' + opts(RMS, r.rm) + "</select></td>" +
+        '<td class="done"><input type="checkbox" data-i="' + i + '" data-f="done" title="Report finished"' + (r.done ? " checked" : "") + "></td>" +
         '<td class="cerner"><input type="checkbox" data-i="' + i + '" data-f="cerner" title="Uploaded to Cerner"' + (r.cerner ? " checked" : "") + "></td>" +
         '<td class="crm-cell" data-cslot="' + i + '"><button class="crm-link" type="button" disabled>Open</button></td>' +
         '<td class="fbadges" data-fslot="' + i + '"><span class="fnone">&mdash;</span></td>' +
@@ -873,7 +879,7 @@
       var ntr = document.createElement("tr");
       ntr.className = "notes-row";
       ntr.innerHTML =
-        '<td class="notes-cell" colspan="13">' +
+        '<td class="notes-cell" colspan="14">' +
           '<textarea rows="1" placeholder="Notes &mdash; post-shock, ERI watch, needs interpreter&hellip;" data-i="' + i + '" data-f="notes">' + esc(r.notes) + '</textarea>' +
         '</td>';
       place(ntr);
@@ -934,7 +940,7 @@
     } else { render(); }
   });
   window.addRow = function () {
-    rows().push({ time: "", pt: "", mfr: "", dtype: "", provider: providerFilter || "Tech", check: "In-clinic", lastOff: "", rm: "", cerner: false, notes: "" });
+    rows().push({ time: "", pt: "", mfr: "", dtype: "", provider: providerFilter || "Tech", check: "In-clinic", lastOff: "", rm: "", done: false, cerner: false, notes: "" });
     save(); render();
     var t = $("schedBody").querySelectorAll("td.time input");
     if (t.length) t[t.length - 1].focus();
@@ -2799,7 +2805,7 @@
     var tr = document.createElement("tr");
     tr.className = "crm-panel-row";
     tr.innerHTML =
-      '<td colspan="13">' +
+      '<td colspan="14">' +
         '<div class="crm-panel">' +
           '<div class="crm-panel-hdr">' +
             '<span class="crm-panel-pt">' + esc(r.pt || "This patient") + '</span>' +
