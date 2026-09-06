@@ -52,13 +52,14 @@ function firePageExit() {
 function resetListeners() { listeners.document = {}; listeners.window = {}; }
 
 function installIndexedDB() {
+  let failBundleWrite = false;
   const data = new Map([["kv", new Map()]]);
   function makeTx(storeName) {
     const ops = [];
     const tx = { oncomplete: null, onerror: null, error: null, objectStore: () => store };
     const store = {
       get(k) { const rq = {}; ops.push(() => { rq.result = data.get(storeName).get(k); if (rq.onsuccess) rq.onsuccess(); }); return rq; },
-      put(v, k) { const rq = {}; ops.push(() => { data.get(storeName).set(k, v); if (rq.onsuccess) rq.onsuccess(); }); return rq; },
+      put(v, k) { const rq = {}; ops.push(() => { if (k === 'bundle' && failBundleWrite) throw new Error('disk quota'); data.get(storeName).set(k, v); if (rq.onsuccess) rq.onsuccess(); }); return rq; },
       delete(k) { const rq = {}; ops.push(() => { data.get(storeName).delete(k); if (rq.onsuccess) rq.onsuccess(); }); return rq; }
     };
     queueMicrotask(() => {
@@ -77,7 +78,7 @@ function installIndexedDB() {
       return req;
     }
   };
-  return { wipe: () => data.get("kv").clear() };
+  return { wipe: () => data.get("kv").clear(), failWrites: (v) => { failBundleWrite = v; } };
 }
 const shared = installIndexedDB();
 
@@ -104,6 +105,35 @@ function makeCadence(everyMs) {
 }
 
 async function cadenceUnit() {
+  // A failed publish stays pending, retries without another edit, and never announces success.
+  let attempts = 0, successes = 0;
+  const retry = CRMCadence.create({ everyMs: 25, commit: () => {
+    if (++attempts === 1) throw new Error('temporary failure');
+  }, onCommitted: () => successes++ });
+  retry.stage();
+  await retry.commitNow();
+  assert.strictEqual(retry.pending(), true);
+  assert.strictEqual(successes, 0);
+  await wait(100);
+  assert.strictEqual(attempts, 2);
+  assert.strictEqual(successes, 1);
+  assert.strictEqual(retry.pending(), false);
+  // Persistent failures stop retrying but remain pending for explicit Save or another edit.
+  let failures = 0;
+  const bounded = CRMCadence.create({ everyMs: 20, maxRetries: 1, commit: () => {
+    failures++; throw new Error('still unavailable');
+  } });
+  await assert.rejects(bounded.commitNow({ rethrow: true }), /still unavailable/);
+  await wait(100);
+  assert.strictEqual(failures, 2);
+  assert.strictEqual(bounded.pending(), true);
+  bounded.cancel();
+  // An explicit cancellation must not be undone by an older in-flight failure.
+  let rejectCommit;
+  const cancelled = CRMCadence.create({ commit: () => new Promise((_, reject) => { rejectCommit = reject; }) });
+  const flight = cancelled.commitNow();
+  await settle(); cancelled.cancel(); rejectCommit(new Error('late failure')); await flight;
+  assert.strictEqual(cancelled.pending(), false);
   /* ---- typing must not publish, and must not starve the cadence ----
      The upper bound is DERIVED from the clock, not hard-coded: setTimeout has a ~15.6ms floor on
      Windows, so 25 x wait(4) runs ~390ms there and ~100ms on a fast-timer platform. A fixed count
@@ -221,6 +251,10 @@ async function deferredHandleWrite() {
   assert.ok(text.indexOf("typing 11") !== -1, "the staged bytes are not in the working copy");
 
   // And carried out by the next commit, exactly once.
+  shared.failWrites(true);
+  await assert.rejects(tab.flush(), /disk quota/);
+  assert.ok(tab._journal.size, 'failed IndexedDB commit discarded pending edits');
+  shared.failWrites(false);
   serializations = 0;
   await tab.flush();
   await settle();

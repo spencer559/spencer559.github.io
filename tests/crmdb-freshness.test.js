@@ -159,7 +159,7 @@ async function run() {
     const h = await seedStation({ cache: { v: "STALE" }, cacheMod: 1000, cacheMatchesFile: true, file: { v: "NEWER" }, fileMod: 9000 });
     const s = newTab(); await s.stored();
     let warning = ""; s.onStatus = (msg, cls) => { if (cls === "warn") warning = msg; };
-    await s.saveNow();                    // before verifyFreshness
+    await assert.rejects(s.saveNow(), /Reconnect the database/); // before verifyFreshness
     assert.strictEqual(h.writes, 0, "an unverified session wrote to the file — this is the OneDrive-clobber bug");
     assert.match(warning, /only in this browser/i,
       "a blocked explicit save must say that the edits have not reached the database file");

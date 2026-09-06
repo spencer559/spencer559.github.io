@@ -407,6 +407,7 @@
 </header>
 
 <div class="main-scroll">
+<div id="saveWarning" role="alert" hidden style="padding:10px 14px;margin-bottom:12px;border:1px solid var(--amber);border-radius:8px;color:var(--text);background:var(--panel);"></div>
 <div class="panel">
   <div class="datebar">
     <span id="dayLabel"></span>
@@ -936,7 +937,7 @@
     if (wsRoot && WS && slot && WS.removeSlotFiles) {
       // flushPending, not flush: the row removal above is still sitting on save()'s debounce, and a
       // bare flush would commit the deleted files without the schedule.json that no longer lists them.
-      WS.removeSlotFiles(wsRoot, curDate, slot).then(function () { flushPending(); render(); });
+      WS.removeSlotFiles(wsRoot, curDate, slot).then(function () { flushPending().catch(function () {}); render(); });
     } else { render(); }
   });
   window.addRow = function () {
@@ -1632,6 +1633,11 @@
     var el = $("fileStatus");
     el.textContent = msg; el.className = "hdr-status" + (cls ? " " + cls : "");
     $("storageDot").style.background = cls === "ok" ? "var(--green)" : (cls === "warn" ? "var(--amber)" : "var(--muted)");
+    var warning = $("saveWarning");
+    if (warning) {
+      warning.textContent = cls === "warn" ? msg : "";
+      warning.hidden = cls !== "warn";
+    }
   }
   function setWsStatus(msg, cls) {
     var el = $("wsStatus");
@@ -1640,19 +1646,22 @@
   // the store reports autosave / unsaved / errors through here
   if (WS) WS.onStatus = function (msg, cls) { setStatus(msg, cls); updateSaveBtn(); };
 
-  // Commit the latest schedule before handing off. File/IndexedDB writes can occasionally stall
-  // when another tab has the database open, so navigation also has a bounded fallback; a failed
-  // background save must never turn the CRM button into a no-op.
+  // Wait for the browser working copy before leaving; a timeout must not open stale patient data.
   function navigateToReportGenerator(url) {
     var navigated = false;
-    var fallback = setTimeout(go, 1800);
+    var fallback = setTimeout(function () {
+      setStatus("Still saving — keep this page open. The report will open when the browser save finishes.", "warn");
+    }, 1800);
     function go() {
       if (navigated) return;
       navigated = true;
       clearTimeout(fallback);
       location.href = url;
     }
-    Promise.resolve(flushPending()).then(go, go);
+    Promise.resolve(flushPending()).then(go, function (e) {
+      clearTimeout(fallback);
+      setStatus("Could not open report — save failed. Try Save now, then open the report again. " + e.message, "warn");
+    });
   }
   window.goToReportGen = function (ev) {
     if (ev) ev.preventDefault();
@@ -1758,9 +1767,12 @@
     }).then(function () {
       // announceSchedule("committed") rides on the cadence's onCommitted, so other tabs are only
       // ever told to reload once the shared bundle really holds these bytes.
-      if (opts && opts.commit) return cadence.commitNow();
+      if (opts && opts.commit) return cadence.commitNow({ rethrow: true });
       cadence.stage();
-    }).catch(function (e) { setStatus("Save failed: " + e.message, "warn"); });
+    }).catch(function (e) {
+      setStatus("Save failed — keep this page open and try Save now. " + e.message, "warn");
+      if (opts && opts.commit) throw e;
+    });
   }
   // Everything staged in this tab, out to the shared copy, now: the browser mirror, the pending
   // schedule.json write, and the commit. This is the one thing every exit and hand-off needs —
@@ -1953,7 +1965,7 @@
     pruneRowsBefore(today);
     var fileJob = (wsRoot && WS.pruneFilesBefore) ? WS.pruneFilesBefore(today) : Promise.resolve({ files: 0 });
     fileJob.then(function (res) {
-      save(); flushPending(); render();
+      save(); flushPending().catch(function () {}); render();
       setWsStatus("Cleared all past data" + (res && res.files ? " — " + res.files + " file" + (res.files === 1 ? "" : "s") + " removed" : ""), "ok");
       updateMemoryUI();
     });
@@ -1982,7 +1994,7 @@
     // Claim SYNCHRONOUSLY. All three teardown events fire for a single exit, and writeDataFile only
     // settles in a .then — without nulling the timer here, one close would stage and commit thrice.
     clearTimeout(syncTimer); syncTimer = null;
-    writeDataFile({ commit: true });
+    writeDataFile({ commit: true }).catch(function () {}); // warning/retry already handled above
     return true;
   });
   /* Editing time/patient name changes the slot folder name — without a migration the row
@@ -2787,13 +2799,18 @@
   // against a schedule.json that predates the row it belongs to — the patient wouldn't be found,
   // and the shared Remote-monitoring status would have nothing to write back to. The full-page
   // navigation has always flushed before handing off (see navigateToReportGenerator); the panel
-  // owes the same guarantee, with the same bounded fallback so a stalled write can't eat the click.
+  // owes the same guarantee. A slow/failed commit must not open a stale patient in the frame.
   function openPanel(r, i) {
     if (!wsRoot || !slotOf(r)) return;
     var done = false;
     var go = function () { if (done) return; done = true; clearTimeout(fallback); insertPanel(r, i); };
-    var fallback = setTimeout(go, 1800);
-    Promise.resolve(flushPending()).then(go, go);
+    var fallback = setTimeout(function () {
+      setStatus("Still saving — the report will open when the browser save finishes.", "warn");
+    }, 1800);
+    Promise.resolve(flushPending()).then(go, function (e) {
+      clearTimeout(fallback);
+      setStatus("Could not open report — save failed. Try Save now, then open the report again. " + e.message, "warn");
+    });
   }
 
   function insertPanel(r, i) {
@@ -3275,7 +3292,8 @@
       try { localStorage.removeItem(KEY); } catch (e) {}
       setProviderFilter("");   // don't hand the next user a filtered view
       return (WS ? WS.forget() : Promise.resolve());
-    }).then(function () { setTimeout(function () { location.reload(); }, 400); });
+    }).then(function () { setTimeout(function () { location.reload(); }, 400); })
+      .catch(function (e) { setStatus("Could not leave station — save failed. This browser's copy has been kept. " + e.message, "warn"); });
   };
 
   /* ---------- go ---------- */

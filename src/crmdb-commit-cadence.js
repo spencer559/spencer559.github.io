@@ -13,8 +13,7 @@
  *   • every deliberate exit — navigating away, switching patient, tab-hide, pagehide, Save —
  *     commits immediately.
  *
- * So the cadence window is only ever exposed by a hard crash, never by a normal close or
- * navigation.
+ * Exit hooks make a best-effort commit; browsers may terminate asynchronous work on close.
  *
  *   var cadence = CRMCadence.create({
  *     everyMs: 30000,
@@ -36,6 +35,8 @@
     var onError = opts.onError;
 
     var timer = null, pending = false;
+    var retries = 0, generation = 0;
+    var maxRetries = opts.maxRetries == null ? 3 : opts.maxRetries;
     // Set once a page's own onLeave has taken responsibility for an exit, and cleared by the next
     // stage(). See attachLeaveHooks: it is what makes "one exit, one commit" true even when the
     // page commits asynchronously.
@@ -47,8 +48,12 @@
     // restarting an in-flight one, or continuous typing would push the commit out forever and the
     // cadence would never fire at all.
     function stage() {
+      retries = 0;
       pending = true;
       leftHandled = false;   // new work: a later exit is a fresh one, and may fall back again
+      arm();
+    }
+    function arm() {
       if (timer) return;
       timer = setTimeout(function () {
         timer = null;
@@ -59,19 +64,29 @@
     // Publish whatever is staged. Used by the cadence timer and by every immediate-exit path.
     // Clears the pending flag FIRST, so a second call arriving before the commit resolves (three
     // teardown events for one page exit) doesn't repeat it.
-    function commitNow() {
+    function commitNow(options) {
       cancel();
+      var attemptGeneration = generation;
       if (!commitFn) return Promise.resolve();
       return Promise.resolve()
         .then(commitFn)
-        .then(function (r) { report(onCommitted, r); return r; },
-              function (e) { report(onError, e); });
+        .then(function (r) { retries = 0; report(onCommitted, r); return r; },
+              function (e) {
+                // Keep failed work pending. Never revive work cancelled by a later save/close.
+                if (generation === attemptGeneration) {
+                  pending = true; leftHandled = false;
+                  if (retries++ < maxRetries) arm();
+                }
+                report(onError, e);
+                if (options && options.rethrow) throw e;
+              });
     }
 
     // Drop the pending flag and the timer without committing. For the case where something else
     // has already published everything staged (a full save, a finalize) and leaving the timer
     // armed would only buy a redundant commit.
     function cancel() {
+      generation++;
       pending = false;
       clearTimeout(timer); timer = null;
     }

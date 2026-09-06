@@ -565,6 +565,7 @@
   //   → { ok:false }            another tab moved the revision; caller rebases and retries
   //   → { ok:true, noIdb:true } no IndexedDB (Node / private mode) — nothing to race with
   function idbCas(expectedRev, blob, crcs) {
+    if (typeof indexedDB === "undefined") return Promise.resolve({ ok: true, noIdb: true });
     return idb().then(function (db) {
       return new Promise(function (res, rej) {
         var tx = db.transaction("kv", "readwrite"), st = tx.objectStore("kv");
@@ -581,8 +582,9 @@
         };
         tx.oncomplete = function () { res(wrote ? { ok: true, rev: expectedRev + 1 } : { ok: false }); };
         tx.onerror = function () { rej(tx.error); };
+        tx.onabort = function () { rej(tx.error || new Error("Browser database save was aborted")); };
       });
-    }).catch(function () { return { ok: true, noIdb: true }; });
+    });
   }
 
   /* ------------------------------------------------------------- persistence */
@@ -657,7 +659,7 @@
             var blob = s.blob;
             return idbCas(shared, blob, s.crcs).then(function (res) {
               if (!res.ok) {                       // another tab committed mid-serialize
-                if (++tries >= COMMIT_RETRIES) return null;
+                if (++tries >= COMMIT_RETRIES) throw new Error("Database is busy in another tab. Save again.");
                 return attempt();
               }
               if (!res.noIdb) myRev = res.rev;
@@ -684,7 +686,8 @@
     // what's on disk. This is the guard that stops a stale station cache clobbering newer OneDrive
     // data before the reconnect freshness check has had a chance to run.
     if (!freshnessVerified) {
-      if (opts.loud || opts.rethrow) status("Save blocked — these edits are only in this browser. Reconnect the database and choose which copy to keep.", "warn");
+      status("Save blocked — these edits are only in this browser. Reconnect the database and choose which copy to keep.", "warn");
+      if (opts.rethrow) return Promise.reject(new Error("Reconnect the database before saving"));
       return Promise.resolve(false);
     }
     return containerSig(blob).then(function (sig) {
@@ -706,12 +709,12 @@
         cacheMatchesFile = (seq == null || seq === mutSeq);
         return persistMeta();
       })
-      .then(function () { if (opts.loud) status("Saved ✓", "ok"); return true; })
+      .then(function () { if (opts.loud && cacheMatchesFile) status("Saved to " + suggestedName + " ✓", "ok"); return true; })
       .catch(function (e) {
         // pendingSig deliberately survives a failure: the write may still have landed, and it only
         // ever serves to recognize our own bytes.
         if (opts.rethrow) throw e;
-        if (opts.loud) status("Save failed: " + e.message, "warn");
+        status("File save failed — changes remain in this browser. Reconnect the database or try Save now. " + e.message, "warn");
         return false;
       });
   }
@@ -728,7 +731,7 @@
           if (fileHandle && canAutosave) { writeToFileInBackground(c); return; }
           status("Unsaved — tap Save database updates", "warn");
         });
-      });
+      }).catch(function (e) { status("Browser save failed — keep this page open and try Save now. " + e.message, "warn"); });
     }, 1200);
   }
 
@@ -742,7 +745,7 @@
     // Every blob is a complete database snapshot. If OneDrive is slower than the edit cadence,
     // intermediate snapshots have no value yet retain one database-sized Blob each. Keep only the
     // newest pending snapshot; the active write finishes, then the queue catches up once.
-    pendingBackgroundWrite = { blob: c.blob, seq: c.seq, loud: !!loud };
+    pendingBackgroundWrite = { blob: c.blob, seq: c.seq, loud: true };
     if (backgroundWriteQueued) return;
     backgroundWriteQueued = true;
     enqueueFile(function drainBackgroundWrites() {

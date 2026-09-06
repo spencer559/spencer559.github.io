@@ -152,6 +152,19 @@ async function otherTabSaved(h, schedule) {
 }
 
 async function run() {
+  // Background file failures must be visible, retain the working copy, and allow manual retry.
+  {
+    const { h, seed } = await station();
+    const messages = [];
+    seed.onStatus = (msg, kind) => messages.push({ msg, kind });
+    await dirtyCache(h, seed, { v: 'RETRY-ME' });
+    assert.ok(messages.some(m => m.kind === 'warn' && /File save failed/.test(m.msg)));
+    assert.strictEqual(seed.hasPendingFileChanges(), true);
+    assert.strictEqual((await readSched(seed)).v, 'RETRY-ME');
+    await seed.saveNow();
+    assert.strictEqual(seed.hasPendingFileChanges(), false);
+    assert.ok(messages.some(m => m.kind === 'ok' && /Saved to/.test(m.msg)));
+  }
   /* 1. An autosave interrupted before its bookkeeping landed is still OUR write — not a conflict. */
   {
     const { h, seed } = await station();
