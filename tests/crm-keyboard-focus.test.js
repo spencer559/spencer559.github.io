@@ -1,6 +1,6 @@
 "use strict";
 const assert = require('assert');
-const { reveal } = require('../src/crm-keyboard-focus.js');
+const { reveal, focusRow, removeRow } = require('../src/crm-keyboard-focus.js');
 global.getComputedStyle = pane => pane.style;
 function rect(top, left, width, height) {
   return { top, left, width, height, bottom: top + height, right: left + width };
@@ -37,4 +37,22 @@ s = setup(rect(150, 450, 100, 24), null, true);
 reveal(s.control, s.main);
 assert.strictEqual(s.cellPane.scrollLeft, 158, 'reveal a cell in a wide table');
 assert.strictEqual(s.outer.scrollLeft, 50, 'must not scroll the source PDF/schedule');
+// Added rows skip hidden/disabled fields. Removal prefers next, then previous, then Add.
+let focused = null;
+function field(name, visible = true, disabled = false) {
+  return { disabled, getClientRects: () => visible ? [{}] : [], closest: () => null,
+    focus: options => { assert.strictEqual(options.preventScroll, true); focused = name; } };
+}
+const next = { querySelectorAll: () => [field('next')] };
+const previous = { querySelectorAll: () => [field('previous')] };
+focusRow({ querySelectorAll: () => [field('hidden', false), field('disabled', true, true), field('new')] });
+assert.strictEqual(focused, 'new');
+for (const [nextRow, previousRow, expected] of [[next, previous, 'next'], [null, previous, 'previous'], [null, null, 'add']]) {
+  let removed = false;
+  removeRow({ nextElementSibling: nextRow, previousElementSibling: previousRow,
+    closest: () => ({ parentElement: { querySelector: () => field('add') } }),
+    remove: () => { removed = true; } });
+  assert.ok(removed);
+  assert.strictEqual(focused, expected);
+}
 console.log('PASS crm-keyboard-focus');

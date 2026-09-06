@@ -125,30 +125,9 @@ body { font-family: Arial, Helvetica, sans-serif; background: var(--bg); color: 
 .json-dd-toggle.on .dd-switch::after { transform: translateX(12px); }
 @media (prefers-reduced-motion: reduce) { .json-dd-toggle .dd-switch, .json-dd-toggle .dd-switch::after { transition: none; } }
 
-/* SIDEBAR */
-.sidebar {
-  position: fixed; top: 44px; left: 0; bottom: 0; width: 186px;
-  background: #fff; border-right: 1px solid var(--border);
-  overflow-y: auto; z-index: 200; padding: 10px 0 20px;
-}
-.nav-group-lbl { padding: 8px 14px 3px; font-size: 8.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #aaa; }
-.nav-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 5px 14px; font-size: 10.5px; font-weight: 500;
-  color: #445; cursor: pointer; border-left: 2px solid transparent;
-  transition: background .1s, border-color .1s, color .1s;
-  text-decoration: none;
-}
-.nav-item:hover { background: var(--navy-lt); color: var(--navy); }
-.nav-item.active { border-left-color: var(--navy); background: var(--navy-lt); color: var(--navy); font-weight: 700; }
-.nav-dot { width: 6px; height: 6px; border-radius: 50%; background: #ddd; flex-shrink: 0; transition: background .15s; }
-.nav-item.active .nav-dot { background: var(--navy); }
-.nav-item.filled .nav-dot { background: var(--green); }
-.nav-item.hidden-nav, .nav-group-lbl.hidden-nav { display: none; }
-
 /* MAIN */
-.main { position: fixed; top: 44px; left: 186px; right: 0; bottom: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 18px 26px 60px; }
-.form-body { max-width: 860px; }
+.main { position: fixed; top: 44px; left: 0; right: 0; bottom: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 18px 26px 60px; }
+.form-body { width: 100%; }
 
 /* SECTION */
 .section { margin-bottom: 16px; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.08); }
@@ -275,8 +254,6 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
 /* RESPONSIVE / MOBILE (phones + tablets) */
 @media (max-width: 820px) {
   html { font-size: 12px; -webkit-text-size-adjust: 100%; }
-  /* drop the fixed sidebar and reclaim the full width for the form */
-  .sidebar { display: none; }
   .main { left: 0; padding: 14px 10px 40px; }
   .form-body { max-width: none; }
   /* dense multi-column field grids reflow to whatever fits the screen */
@@ -307,7 +284,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
 @media print {
   @page { size: letter; margin: .45in .5in; }
   html, body { background: #fff; height: auto !important; overflow: visible !important; }
-  .app-bar, .sidebar, .db-handoff-guard { display: none !important; }
+  .app-bar, .db-handoff-guard { display: none !important; }
   .main { position: static !important; overflow: visible !important; height: auto !important; left: 0 !important; padding: 0 !important; }
   .section { box-shadow: none; margin-bottom: 14px; page-break-inside: avoid; }
   .add-btn, .del-btn, .sec-clear, .rate-calc { display: none !important; }
@@ -322,7 +299,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
    the chrome differs: a "Schedule" button would navigate the frame into the very page that owns
    it, so goToSchedule posts a message to the host instead (see the embed block in the slot
    script) and the button itself goes. The app-shell layout needs no change — its fixed app-bar
-   and sidebar resolve against the FRAME's viewport, which is the panel. */
+   resolves against the FRAME's viewport, which is the panel. */
 .embedded .btn-schedule { display: none; }
 /* Export and Import use the split-view drill-in treatment everywhere. Keeping one menu inside one
    viewport footprint is also friendlier on iPad and smaller laptop windows. */
@@ -410,24 +387,6 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
     border:1px solid #cfd6dd; border-radius:6px; padding:7px 20px 7px 11px; max-width:340px;
     box-shadow:0 6px 18px rgba(20,40,60,.18); margin-top:0; }
 </style>
-
-<!-- SIDEBAR -->
-<nav class="sidebar">
-  <div class="nav-group-lbl">Patient</div>
-  <a class="nav-item" id="nav-patient" href="#s-patient" onclick="return navTo('s-patient')"><span class="nav-dot"></span>Patient &amp; Device</a>
-  <div class="nav-group-lbl">Interrogation</div>
-  <a class="nav-item" id="nav-battery" href="#s-battery" onclick="return navTo('s-battery')"><span class="nav-dot"></span>Battery Status</a>
-  <a class="nav-item" id="nav-episodes" data-mode="crm" href="#s-episodes" onclick="return navTo('s-episodes')"><span class="nav-dot"></span>Episode Log</a>
-  <a class="nav-item" id="nav-loop-episodes" data-mode="loop" href="#s-loop-episodes" onclick="return navTo('s-loop-episodes')"><span class="nav-dot"></span>Episode Log</a>
-  <div class="nav-group-lbl" data-mode="crm">Testing</div>
-  <a class="nav-item" id="nav-leads" data-mode="crm" href="#s-leads" onclick="return navTo('s-leads')"><span class="nav-dot"></span>Lead Measurements</a>
-  <div class="nav-group-lbl" data-mode="crm">Programming</div>
-  <a class="nav-item" id="nav-params" data-mode="crm" href="#s-params" onclick="return navTo('s-params')"><span class="nav-dot"></span>Parameters</a>
-  <div class="nav-group-lbl" data-mode="loop">Sensing / Detection</div>
-  <a class="nav-item" id="nav-loop-detect" data-mode="loop" href="#s-loop-detect" onclick="return navTo('s-loop-detect')"><span class="nav-dot"></span>Detection Parameters</a>
-  <div class="nav-group-lbl">Documentation</div>
-  <a class="nav-item" id="nav-final" href="#s-final" onclick="return navTo('s-final')"><span class="nav-dot"></span>Final Session Summary</a>
-</nav>
 
 <main class="main">
 <div class="form-body">
@@ -526,7 +485,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
         <thead><tr><th id="li-loc-hdr" style="width:18%">Lead Location</th><th id="li-mfr-hdr" style="width:16%">Lead Manufacturer</th><th id="li-model-hdr">Lead Model</th><th id="li-serial-hdr">Lead Serial #</th><th style="width:16%">Implant Date</th><th style="width:24px"></th></tr></thead>
         <tbody id="leadinfo-tbody"></tbody>
       </table>
-      <button class="add-btn" onclick="addLeadRow()">+ Add Lead</button>
+      <button class="add-btn" onclick="addLeadRow(true)">+ Add Lead</button>
       <div class="field" style="margin-top:6px;"><span class="lbl">Notes</span><textarea id="leadinfo-notes" placeholder="Optional notes…" style="width:100%;min-height:48px;"></textarea></div>
     </div>
     </div><!-- /leadinfo-block -->
@@ -613,7 +572,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
       <thead><tr><th style="width:18px">#</th><th style="min-width:128px">Date / Time</th><th>Episode Type</th><th>Duration</th><th>Max Rate</th><th>Flags</th><th>Symptoms / Notes</th><th style="width:16px"></th></tr></thead>
       <tbody id="lep-tbody"></tbody>
     </table>
-    <button class="add-btn" onclick="addLoopEpRow()">+ Add Episode</button>
+    <button class="add-btn" onclick="addLoopEpRow(true)">+ Add Episode</button>
     </div>
     <div id="lep-freetext-wrap" style="display:none;">
       <textarea id="lp-freetext" placeholder="Enter episodes / arrhythmia summary as free text…" style="width:100%;min-height:120px;"></textarea>
@@ -675,7 +634,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
       <thead><tr><th style="width:18px">#</th><th style="min-width:128px">Date / Time</th><th>Episode Type</th><th>Duration</th><th>Max Rate</th><th>Therapy</th><th>Flags</th><th>Notes</th><th style="width:16px"></th></tr></thead>
       <tbody id="ep-tbody"></tbody>
     </table>
-    <button class="add-btn" onclick="addEpRow()">+ Add Episode</button>
+    <button class="add-btn" onclick="addEpRow(true)">+ Add Episode</button>
     </div>
     <div id="ep-freetext-wrap" style="display:none;">
       <textarea id="ep-freetext" placeholder="Enter episodes / arrhythmia summary as free text…" style="width:100%;min-height:120px;"></textarea>
@@ -758,7 +717,7 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
       <thead><tr><th style="width:30%">Parameter Changed</th><th style="width:18%">Previous Value</th><th style="width:18%">New Value</th><th>Clinical Reason / Indication</th><th style="width:18px"></th></tr></thead>
       <tbody id="rp-tbody"></tbody>
     </table>
-    <button class="add-btn" onclick="addRpRow()">+ Add Parameter Change</button>
+    <button class="add-btn" onclick="addRpRow(true)">+ Add Parameter Change</button>
     </div>
 
     <!-- Status is the SAME field as the Patient Schedule's "Remote" precharting column: opening a
@@ -883,7 +842,7 @@ var ss = document.getElementById('save-status');
 
 // ── EPISODE ROWS ──
 var epN = 0;
-function addEpRow() {
+function addEpRow(focusNew) {
   epN++;
   var n = epN;
   var tr = document.createElement('tr');
@@ -921,13 +880,14 @@ function addEpRow() {
     '<td><textarea name="ep'+n+'-notes" rows="1" style="width:100%;min-height:24px;resize:none;font-size:9.5px;padding:2px 4px;overflow:hidden;" oninput="autoGrow(this)"></textarea></td>' +
     '<td><button class="del-btn" onclick="delRow(\'ep-'+n+'\')">×</button></td>';
   document.getElementById('ep-tbody').appendChild(tr);
+  if (focusNew) CRMKeyboardFocus.focusRow(tr);
   scheduleSave();
 }
 addEpRow();   // default to a single episode row; use "+ Add Episode" for more
 
 // ── LOOP EPISODE ROWS (ILR logbook — no Therapy column; ICM episode types) ──
 var lepN = 0;
-function addLoopEpRow() {
+function addLoopEpRow(focusNew) {
   lepN++;
   var n = lepN;
   var tr = document.createElement('tr');
@@ -955,13 +915,14 @@ function addLoopEpRow() {
     '<td><textarea name="lep'+n+'-notes" rows="1" style="width:100%;min-height:24px;resize:none;font-size:9.5px;padding:2px 4px;overflow:hidden;" oninput="autoGrow(this)"></textarea></td>' +
     '<td><button class="del-btn" onclick="delRow(\'lep-'+n+'\')">×</button></td>';
   document.getElementById('lep-tbody').appendChild(tr);
+  if (focusNew) CRMKeyboardFocus.focusRow(tr);
   scheduleSave();
 }
 addLoopEpRow();   // default to a single row, same as the CRM logbook
 
 // ── REPROG ROWS ──
 var rpN = 0;
-function addRpRow() {
+function addRpRow(focusNew) {
   rpN++;
   var n = rpN;
   var tr = document.createElement('tr');
@@ -973,13 +934,14 @@ function addRpRow() {
     '<td><input type="text" name="rp' + n + '-reason" placeholder="Clinical rationale"></td>' +
     '<td><button class="del-btn" onclick="delRow(\'rp-' + n + '\')">×</button></td>';
   document.getElementById('rp-tbody').appendChild(tr);
+  if (focusNew) CRMKeyboardFocus.focusRow(tr);
   scheduleSave();
 }
 addRpRow(); addRpRow(); addRpRow();
 
 function delRow(id) {
   var el = document.getElementById(id);
-  if (el) el.remove();
+  if (el) CRMKeyboardFocus.removeRow(el);
   scheduleSave();
 }
 
@@ -1150,9 +1112,6 @@ function setFormMode(loop) {
   document.querySelectorAll('.section[data-mode]').forEach(function(el){
     el.classList.toggle('hidden-section', (el.getAttribute('data-mode') === 'loop') !== loop);
   });
-  document.querySelectorAll('.sidebar [data-mode]').forEach(function(el){
-    el.classList.toggle('hidden-nav', (el.getAttribute('data-mode') === 'loop') !== loop);
-  });
   ['leadinfo-block','ap-dep-wrap','ap-rhythm-wrap','pct-lbl','pct-grid'].forEach(function(id){
     var el = document.getElementById(id);
     if (el) el.style.display = loop ? 'none' : '';
@@ -1211,18 +1170,19 @@ function liRowHTML(locVal, p){
 // scraped verbatim along with the live ones — this is how they come off the report.
 function delLeadRow(btn){
   var tr = btn.closest('tr');
-  if (tr) tr.remove();
+  if (tr) CRMKeyboardFocus.removeRow(tr);
   scheduleSave();
 }
 // A lead the importer didn't produce, or to undo a mistaken removal. The unique data-loc keeps
 // the row from colliding with a default chamber row in updateLeadInfoTable's preserve map.
 var liManualN = 0;
-function addLeadRow(){
+function addLeadRow(focusNew){
   var tb = document.getElementById('leadinfo-tbody'); if (!tb) return;
   var tr = document.createElement('tr');
   tr.setAttribute('data-loc', 'manual#' + (++liManualN));
   tr.innerHTML = liRowHTML('', {});
   tb.appendChild(tr);
+  if (focusNew) CRMKeyboardFocus.focusRow(tr);
   scheduleSave();
 }
 // The three report builders (print HTML, vector PDF, text summary) all render this table, so
@@ -1376,7 +1336,7 @@ function updateLeadInfoTable() {
   });
 }
 
-// ── SIDEBAR NAV ──
+// ── INTERVAL CALCULATOR ──
 function calcIntervalRate(value) {
   var out = document.getElementById('interval-rate-result');
   if (!out) return;
@@ -1385,30 +1345,6 @@ function calcIntervalRate(value) {
   var bpm = 60000 / ms;
   out.textContent = (Math.round(bpm * 10) / 10).toLocaleString([], { maximumFractionDigits: 1 }) + ' bpm';
 }
-
-function navTo(id) {
-  var el = document.getElementById(id);
-  var main = document.querySelector('.main');
-  if (!el || !main) return false;
-  // .main is the scroll container (the page itself doesn't scroll), so scroll IT — compute the
-  // section's offset within the container rather than the document.
-  var top = el.getBoundingClientRect().top - main.getBoundingClientRect().top + main.scrollTop - 12;
-  main.scrollTo({ top: top, behavior: 'smooth' });
-  return false;
-}
-
-var sectionIds = ['s-patient','s-battery','s-params','s-leads','s-episodes','s-loop-episodes','s-loop-detect','s-final'];
-var io = new IntersectionObserver(function(entries) {
-  entries.forEach(function(e) {
-    if (e.isIntersecting) {
-      var id = 'nav-' + e.target.id.replace('s-','');
-      document.querySelectorAll('.nav-item').forEach(function(n){ n.classList.remove('active'); });
-      var active = document.getElementById(id);
-      if (active) active.classList.add('active');
-    }
-  });
-}, { root: document.querySelector('.main'), rootMargin: '-15% 0px -75% 0px' });
-sectionIds.forEach(function(id) { var el = document.getElementById(id); if (el) io.observe(el); });
 
 // ── AUTO-SAVE ──
 

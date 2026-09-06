@@ -37,7 +37,28 @@
     }
   }
 
-  if (typeof module !== 'undefined' && module.exports) module.exports = { reveal: reveal };
+  function firstField(row) {
+    if (!row) return null;
+    return Array.from(row.querySelectorAll('input:not([type=hidden]), select, textarea'))
+      .find(function (field) { return !field.disabled && field.getClientRects().length; }) || null;
+  }
+  function focusControl(control) {
+    if (!control) return;
+    control.focus({ preventScroll: true });
+    var main = control.closest('.main');
+    if (main) reveal(control, main);
+  }
+  function focusRow(row) { focusControl(firstField(row)); }
+  function removeRow(row) {
+    var table = row.closest('table');
+    var target = firstField(row.nextElementSibling) || firstField(row.previousElementSibling) ||
+      (table && table.parentElement.querySelector('.add-btn'));
+    row.remove();
+    focusControl(target);
+  }
+  var api = { reveal: reveal, focusRow: focusRow, removeRow: removeRow };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  if (typeof window !== 'undefined') window.CRMKeyboardFocus = api;
   if (typeof document === 'undefined') return;
   var main = document.querySelector('.main');
   if (!main) return;
