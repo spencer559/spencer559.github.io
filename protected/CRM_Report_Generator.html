@@ -247,6 +247,19 @@ textarea:focus { border-color: var(--navy); background: #fff; outline: none; box
 .dt .cbg { gap: 2px 6px; flex-wrap: nowrap; }
 .dt .cbl { font-size: 9.5px; }
 
+/* Keyboard editing: screen-only cues, including dynamically generated lead/episode rows. */
+@media screen {
+  .main :is(input, select, textarea, button, a):focus-visible,
+  .app-bar :is(input, button, a):focus-visible {
+    outline: 2px solid #1768ac;
+    outline-offset: 1px;
+  }
+  .main .dt tr:has(:focus-visible) > td { background-color: #e6eef6; }
+  html .main .dt :is(input, select, textarea):focus:focus-visible {
+    outline: 2px solid #1768ac; outline-offset: 1px; background-color: #fff;
+  }
+}
+
 /* DYNAMIC ROWS */
 .add-btn { background: none; border: 1px dashed var(--navy-mid); color: var(--navy); font-size: 10px; font-weight: 600; padding: 4px 12px; cursor: pointer; border-radius: 2px; font-family: Arial, Helvetica, sans-serif; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .2px; transition: background .1s; }
 .add-btn:hover { background: var(--navy-lt); }
@@ -4269,5 +4282,6 @@ window.ensureReportPdfBuilder = function () {
   postHost({ type: 'crm:ready', sharedWorkspace: HOST_WORKSPACE });
 })();
 </script>
+<script src="../src/crm-keyboard-focus.js"></script>
 </body>
 </html>
